@@ -69,7 +69,6 @@
   .bar { height: 14px; background: rgba(255,255,255,0.08); border-radius: 4px; margin: 4px 0 8px; overflow: hidden; }
   .bar > div { height: 100%; border-radius: 4px; transition: width 0.15s; }
   #hp-fill { background: linear-gradient(90deg, #ff4d4d, #ff884d); width: 100%; }
-  #energy-fill { background: linear-gradient(90deg, #38e6ff, #7cf6c8); width: 100%; }
   #ammo-count { font-size: 34px; color: #eaffff; line-height: 1; }
   #ammo-reserve { color: #7fd8e8; }
   #pulse-status { margin-top: 6px; font-size: 12px; }
@@ -232,45 +231,48 @@
     position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
     background: rgba(140, 220, 255, 0.6); transform: translate(-50%, -50%);
   }
-  /* Standard shooter layout: big FIRE at the right-thumb resting arc,
-   * JUMP in the corner below it, utilities fanned around FIRE, and a
-   * mirrored FIRE on the left so you can shoot while aiming (CODM-style). */
+  /* Standard shooter layout: one big FIRE at the right thumb's resting arc,
+   * JUMP in the corner, utilities fanned around FIRE. The whole cluster
+   * stays below ~260px so it never reaches the slim top HUD, even on
+   * short landscape phones. */
   .tbtn {
     position: absolute; display: flex; align-items: center; justify-content: center;
     border-radius: 50%; border: 2px solid rgba(140, 220, 255, 0.5); background: rgba(16, 34, 54, 0.45);
     color: #bdf3ff; font-weight: bold; pointer-events: auto; user-select: none; -webkit-user-select: none;
-    letter-spacing: 1px; font-size: 11px; transition: transform 0.06s, background 0.1s;
+    letter-spacing: 1px; font-size: 11px; transition: transform 0.06s, background 0.1s, opacity 0.15s;
   }
   .tbtn:active { transform: scale(0.9); background: rgba(140, 220, 255, 0.3); }
+  .tbtn.cooldown { opacity: 0.4; }
   #tb-fire {
-    right: calc(22px + var(--sar)); bottom: calc(96px + var(--sab)); width: 112px; height: 112px;
+    right: calc(22px + var(--sar)); bottom: calc(84px + var(--sab)); width: 104px; height: 104px;
     font-size: 16px; background: rgba(255, 90, 90, 0.35); border-color: rgba(255, 150, 150, 0.65);
   }
   #tb-fire:active { background: rgba(255, 120, 120, 0.55); }
-  #tb-fire-l {
-    left: calc(20px + var(--sal)); bottom: calc(250px + var(--sab)); width: 84px; height: 84px;
-    font-size: 13px; background: rgba(255, 90, 90, 0.3); border-color: rgba(255, 150, 150, 0.55);
-  }
-  #tb-fire-l:active { background: rgba(255, 120, 120, 0.5); }
-  #tb-jump   { right: calc(150px + var(--sar)); bottom: calc(30px + var(--sab));  width: 88px; height: 88px; font-size: 13px; }
-  #tb-dash   { right: calc(268px + var(--sar)); bottom: calc(34px + var(--sab));  width: 72px; height: 72px; }
-  #tb-pulse  { right: calc(40px + var(--sar));  bottom: calc(228px + var(--sab)); width: 70px; height: 70px; }
-  #tb-reload { right: calc(162px + var(--sar)); bottom: calc(150px + var(--sab)); width: 62px; height: 62px; }
+  #tb-jump   { right: calc(138px + var(--sar)); bottom: calc(22px + var(--sab));  width: 78px; height: 78px; font-size: 13px; }
+  #tb-dash   { right: calc(236px + var(--sar)); bottom: calc(30px + var(--sab));  width: 64px; height: 64px; }
+  #tb-pulse  { right: calc(140px + var(--sar)); bottom: calc(118px + var(--sab)); width: 64px; height: 64px; }
+  #tb-reload { right: calc(34px + var(--sar));  bottom: calc(204px + var(--sab)); width: 56px; height: 56px; }
   #btn-pause {
-    position: absolute; top: 12px; right: 12px; width: 46px; height: 46px;
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    position: absolute; top: 8px; right: calc(8px + var(--sar)); width: 42px; height: 42px;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
     border: 2px solid rgba(140, 220, 255, 0.6); border-radius: 10px;
-    background: rgba(20, 50, 80, 0.55); color: #bdf3ff; pointer-events: auto;
+    background: rgba(20, 50, 80, 0.55); pointer-events: auto;
     user-select: none; -webkit-user-select: none;
   }
+  #btn-pause span { width: 5px; height: 18px; border-radius: 2px; background: #bdf3ff; }
 
-  /* Compact HUD on touch devices: panels move to the top, clear of thumbs. */
-  body.touch .cockpit-corner, body.touch .scanlines { display: none; }
-  body.touch #panel-top { top: 10px; gap: 12px; font-size: 11px; padding: 5px 10px; }
-  body.touch #panel-left { left: 10px; bottom: auto; top: 60px; width: 160px; padding: 6px 10px; font-size: 11px; }
-  body.touch #panel-right { right: 10px; bottom: auto; top: 70px; padding: 6px 10px; font-size: 11px; }
-  body.touch #ammo-count { font-size: 22px; }
-  body.touch .bar { height: 10px; }
+  /* Slim touch HUD: everything lives in one ~52px strip along the top, so
+   * the bottom two-thirds of the screen belongs to the game and thumbs.
+   * Dash/pulse cooldowns and reload state are shown on the buttons instead. */
+  body.touch .cockpit-corner, body.touch .scanlines, body.touch .cockpit-vignette { display: none; }
+  body.touch .panel { border-width: 1px; border-radius: 6px; background: rgba(8, 18, 32, 0.5); }
+  body.touch #panel-top { top: 8px; gap: 10px; font-size: 10px; padding: 5px 10px; }
+  body.touch #panel-left { left: calc(8px + env(safe-area-inset-left, 0px)); top: 8px; bottom: auto; width: 118px; padding: 5px 9px; font-size: 9px; }
+  body.touch #panel-left .bar { height: 6px; margin: 2px 0 5px; }
+  body.touch #panel-right { right: calc(58px + env(safe-area-inset-right, 0px)); top: 8px; bottom: auto; padding: 4px 9px; font-size: 9px; }
+  body.touch #ammo-count { font-size: 17px; }
+  body.touch #weapon-name, body.touch #dash-status, body.touch #pulse-status, body.touch #reload-hint { display: none; }
+  body.touch #boost-status { font-size: 9px; margin-top: 2px; }
   body.touch .dmg-num { font-size: 17px; }
   body.touch .dmg-num.big { font-size: 26px; }
 
@@ -370,14 +372,12 @@
   <div class="panel" id="panel-left">
     <div>HULL <span id="ui-hp-text">100/100</span></div>
     <div class="bar"><div id="hp-fill"></div></div>
-    <div>BOOST ENERGY</div>
-    <div class="bar"><div id="energy-fill"></div></div>
     <div id="dash-status">DASH [SHIFT]: READY</div>
     <div id="boost-status"></div>
   </div>
 
   <div class="panel" id="panel-right">
-    <div>FOAM BOLT CANNON</div>
+    <div id="weapon-name">FOAM BOLT CANNON</div>
     <div><span id="ammo-count">14</span> <span id="ammo-reserve">/ 84</span></div>
     <div id="reload-hint"></div>
     <div id="pulse-status">MAGNET PULSE [RMB/E]: READY</div>
@@ -422,7 +422,7 @@
         <div class="howto-row"><span class="keys"><kbd>MOUSE</kbd></span><span class="what">Aim</span></div>
         <div class="howto-row"><span class="keys"><kbd>LMB</kbd></span><span class="what">Fire the foam bolt cannon</span></div>
         <div class="howto-row"><span class="keys"><kbd>RMB</kbd> / <kbd>E</kbd></span><span class="what">Magnet pulse — push &amp; stun</span></div>
-        <div class="howto-row"><span class="keys"><kbd>SPACE</kbd></span><span class="what">Jump — hold to hover</span></div>
+        <div class="howto-row"><span class="keys"><kbd>SPACE</kbd></span><span class="what">Jump</span></div>
         <div class="howto-row"><span class="keys"><kbd>SHIFT</kbd></span><span class="what">Dash</span></div>
         <div class="howto-row"><span class="keys"><kbd>R</kbd></span><span class="what">Reload</span></div>
       </div>
@@ -430,8 +430,8 @@
         <h3>CONTROLS</h3>
         <div class="howto-row"><span class="keys"><kbd>LEFT SIDE</kbd></span><span class="what">Joystick appears under your thumb — move</span></div>
         <div class="howto-row"><span class="keys"><kbd>RIGHT SIDE</kbd></span><span class="what">Drag to aim</span></div>
-        <div class="howto-row"><span class="keys"><kbd>FIRE</kbd></span><span class="what">Shoot — a second fire button sits upper-left</span></div>
-        <div class="howto-row"><span class="keys"><kbd>JUMP</kbd></span><span class="what">Tap to jump, hold to hover</span></div>
+        <div class="howto-row"><span class="keys"><kbd>FIRE</kbd></span><span class="what">Hold to shoot — dots mean reloading</span></div>
+        <div class="howto-row"><span class="keys"><kbd>JUMP</kbd></span><span class="what">Jump — high enough to climb blocks and books</span></div>
         <div class="howto-row"><span class="keys"><kbd>DASH</kbd> <kbd>PULSE</kbd></span><span class="what">Dodge / push &amp; stun</span></div>
       </div>
       <h3>SURVIVAL TIPS</h3>
@@ -489,12 +489,11 @@
   <div id="look-zone"></div>
   <div id="joy-base"><div id="joy-thumb"></div></div>
   <div class="tbtn" id="tb-fire">FIRE</div>
-  <div class="tbtn" id="tb-fire-l">FIRE</div>
   <div class="tbtn" id="tb-jump">JUMP</div>
   <div class="tbtn" id="tb-dash">DASH</div>
   <div class="tbtn" id="tb-pulse">PULSE</div>
   <div class="tbtn" id="tb-reload">RLD</div>
-  <div id="btn-pause">| |</div>
+  <div id="btn-pause"><span></span><span></span></div>
 </div>
 
 <!-- ============================== ROTATE HINT (portrait on touch) ============================== -->
@@ -544,11 +543,7 @@ const CONFIG = {
   player: {
     maxHp: 100,
     moveSpeed: 30,
-    jumpSpeed: 36,
-    hoverAccel: 230,        // upward accel while hovering
-    hoverDrain: 30,         // energy per second while hovering
-    energyMax: 100,
-    energyRegen: 50,        // per second while grounded
+    jumpSpeed: 42,          // high enough to climb every block/step without hover
     dashSpeed: 90,
     dashTime: 0.3,
     dashCooldown: 1.1,
@@ -576,7 +571,7 @@ const CONFIG = {
   },
   enemies: {
     toyBot:  { hp: 45, speed: 14, damage: 8,  fireInterval: 1.5, range: 85, projSpeed: 70, score: 100, standY: 3.2 },
-    beetle:  { hp: 30, speed: 24, damage: 10, meleeRange: 4.5, meleeInterval: 0.85, score: 80, standY: 1.4 },
+    beetle:  { hp: 30, speed: 18, damage: 10, meleeRange: 4.5, meleeInterval: 1.0, backoffTime: 0.9, score: 80, standY: 1.4 },
     turret:  { hp: 90, damage: 10, fireInterval: 1.1, range: 110, projSpeed: 85, turnSpeed: 2.4, score: 150 },
     maxAlive: 16,
   },
@@ -644,7 +639,6 @@ const UPGRADES = [
   { name: 'SERVO LEGS',         desc: 'Move speed +15%',                     apply: g => { g.player.moveSpeed *= 1.15; } },
   { name: 'DASH COILS',         desc: 'Dash cooldown -25%',                  apply: g => { g.player.dashCooldown *= 0.75; } },
   { name: 'MAGNET AMP',         desc: 'Pulse radius & force +25%',           apply: g => { g.player.pulse.radius *= 1.25; g.player.pulse.force *= 1.25; } },
-  { name: 'BOOST CELLS',        desc: 'Hover energy +30',                    apply: g => { g.player.energyMax += 30; g.player.energy = g.player.energyMax; } },
 ];
 
 /* =====================================================================
@@ -724,7 +718,6 @@ class AudioManager {
   footstep()  { this.noise(0.07, 0.22, 500); this.tone('triangle', 85, 40, 0.08, 0.22); }
   land()      { this.noise(0.18, 0.5, 400); this.tone('triangle', 70, 30, 0.16, 0.4); }
   jump()      { this.tone('triangle', 200, 420, 0.14, 0.2); }
-  hover()     { this.tone('sine', 140, 160, 0.1, 0.06); }
   dash()      { this.noise(0.25, 0.4, 3200, 'highpass'); this.tone('sawtooth', 200, 700, 0.2, 0.18); }
   reloadStart(){ this.tone('square', 300, 180, 0.08, 0.25); }
   reloadEnd() { this.tone('square', 250, 520, 0.09, 0.3); this.noise(0.05, 0.25, 3000, 'highpass', 0.05); }
@@ -746,7 +739,7 @@ class UIManager {
     const $ = id => document.getElementById(id);
     this.el = {
       wave: $('ui-wave'), enemies: $('ui-enemies'), score: $('ui-score'),
-      hpText: $('ui-hp-text'), hpFill: $('hp-fill'), energyFill: $('energy-fill'),
+      hpText: $('ui-hp-text'), hpFill: $('hp-fill'),
       ammoCount: $('ammo-count'), ammoReserve: $('ammo-reserve'),
       reloadHint: $('reload-hint'), pulseStatus: $('pulse-status'), dashStatus: $('dash-status'),
       boostStatus: $('boost-status'),
@@ -759,6 +752,11 @@ class UIManager {
       pauseWave: $('pause-wave'), pauseScore: $('pause-score'),
     };
     this.bannerTimer = 0;
+
+    // Touch buttons double as status displays (cooldowns, reload).
+    this.tb = IS_TOUCH
+      ? { fire: $('tb-fire'), dash: $('tb-dash'), pulse: $('tb-pulse') }
+      : null;
 
     // Pool of screen-edge arrows pointing at off-screen enemies / portals.
     this.arrows = [];
@@ -814,7 +812,6 @@ class UIManager {
     this.el.score.textContent = g.score;
     this.el.hpText.textContent = `${Math.ceil(p.hp)}/${p.maxHp}`;
     this.el.hpFill.style.width = `${clamp(p.hp / p.maxHp * 100, 0, 100)}%`;
-    this.el.energyFill.style.width = `${clamp(p.energy / p.energyMax * 100, 0, 100)}%`;
     this.el.ammoCount.textContent = w.ammo;
     this.el.ammoReserve.textContent = `/ ${w.reserve}`;
     this.el.reloadHint.textContent = w.reloading ? 'RELOADING…' : (w.ammo === 0 ? 'PRESS R TO RELOAD' : '');
@@ -826,6 +823,16 @@ class UIManager {
     this.el.dashStatus.textContent = dashReady ? 'DASH [SHIFT]: READY' : `DASH: ${p.dashTimer.toFixed(1)}s`;
     this.el.dashStatus.classList.toggle('ready', dashReady);
     this.el.boostStatus.textContent = p.speedBoostT > 0 ? `⚡ SPEED ×${CONFIG.player.speedBoostMul} — ${p.speedBoostT.toFixed(1)}s` : '';
+
+    // On touch, the buttons themselves show reload / cooldown state.
+    if (this.tb) {
+      this.tb.fire.textContent = w.reloading ? '· · ·' : 'FIRE';
+      this.tb.fire.classList.toggle('cooldown', w.reloading);
+      this.tb.dash.textContent = dashReady ? 'DASH' : p.dashTimer.toFixed(1);
+      this.tb.dash.classList.toggle('cooldown', !dashReady);
+      this.tb.pulse.textContent = pulseReady ? 'PULSE' : p.pulseTimer.toFixed(1);
+      this.tb.pulse.classList.toggle('cooldown', !pulseReady);
+    }
 
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
@@ -1831,6 +1838,7 @@ class BeetleDrone extends Enemy {
     this.parts = built.parts;
     this.collectMaterials();
     this.meleeTimer = 0;
+    this.backoffT = 0;                                 // post-bite retreat timer
     this.he.set(2.2, 1.5, 2.2);
     this.position.y = this.he.y;
     this.hitRadius = 3.0;
@@ -1841,13 +1849,19 @@ class BeetleDrone extends Enemy {
     if (!this.baseUpdate(dt)) return;
     this.animT += dt;
     const dist = this.distToPlayer();
-    this.facePlayer(dt, 8);
+    // Sluggish turning up close: sidestepping actually shakes it off.
+    this.facePlayer(dt, dist < 10 ? 4 : 8);
 
+    this.backoffT = Math.max(0, this.backoffT - dt);
     const desired = V3().copy(this.knockback);
-    if (dist > this.stats.meleeRange * 0.8) {
-      const fwd = this.dirToPlayer();
+    const fwd = this.dirToPlayer();
+    if (this.backoffT > 0) {
+      // After a bite: hop back and circle, giving the player room to move.
+      const side = V3(-fwd.z, 0, fwd.x).multiplyScalar(this.strafe);
+      desired.add(fwd.clone().multiplyScalar(-0.8).add(side).normalize().multiplyScalar(this.stats.speed * 0.7));
+    } else if (dist > this.stats.meleeRange * 0.8) {
       const side = V3(-fwd.z, 0, fwd.x).multiplyScalar(Math.sin(this.animT * 2.4) * 0.45 * this.strafe);
-      desired.add(fwd.add(side).normalize().multiplyScalar(this.stats.speed));
+      desired.add(fwd.clone().add(side).normalize().multiplyScalar(this.stats.speed));
     }
     this.moveWithCollision(desired, dt);
 
@@ -1862,10 +1876,12 @@ class BeetleDrone extends Enemy {
     this.parts.pincerL.rotation.y = 0.25 + Math.sin(this.animT * snap) * 0.3;
     this.parts.pincerR.rotation.y = -0.25 - Math.sin(this.animT * snap) * 0.3;
 
-    // Melee bite.
+    // Melee bite, then disengage.
     this.meleeTimer -= dt;
-    if (dist < this.stats.meleeRange && this.meleeTimer <= 0) {
+    if (dist < this.stats.meleeRange && this.meleeTimer <= 0 && this.backoffT <= 0) {
       this.meleeTimer = this.stats.meleeInterval;
+      this.backoffT = this.stats.backoffTime;
+      this.strafe *= -1;                               // retreat a different way each time
       this.game.player.takeDamage(this.damage);
       this.parts.body.position.z = 1.2;               // lunge pose (springs back via bob)
       this.game.particles.burst(this.game.player.position.clone(), 0xff5db1, 6, { speed: 10, size: 0.35, life: 0.3 });
@@ -2093,7 +2109,7 @@ class MagnetPulse {
 }
 
 /* =====================================================================
- *  PLAYER — movement, camera, damage, dash/hover, weapons.
+ *  PLAYER — movement, camera, damage, dash, weapons.
  * ===================================================================== */
 class Player {
   constructor(game) {
@@ -2103,8 +2119,6 @@ class Player {
     this.hp = C.maxHp;
     this.moveSpeed = C.moveSpeed;
     this.dashCooldown = C.dashCooldown;
-    this.energyMax = C.energyMax;
-    this.energy = C.energyMax;
 
     this.position = V3(0, C.halfExtents.y, 30);        // body center
     this.vel = V3();
@@ -2119,7 +2133,6 @@ class Player {
     this.dashActive = 0;                                // time left in dash
     this.dashDir = V3();
     this.pulseTimer = 0;
-    this.hoverSoundT = 0;
     this.jumpReady = true;
     this.speedBoostT = 0;                              // temporary speed-pickup timer
     this.dead = false;
@@ -2211,25 +2224,17 @@ class Player {
       if (Math.random() < 0.6) this.game.particles.burst(this.position.clone().add(V3(0, -0.5, 0)), 0xbde0fe, 1, { speed: 4, size: 0.35, life: 0.3, gravity: 0 });
     }
 
-    // ---- Jump / hover boost.
+    // ---- Jump.
     this.vel.y -= CONFIG.world.gravity * dt;
     if (input.keys['Space']) {
       if (this.grounded && this.jumpReady) {
         this.vel.y = C.jumpSpeed;
         this.jumpReady = false;
         this.game.audio.jump();
-      } else if (!this.grounded && this.energy > 0 && this.vel.y < 14) {
-        // Hover: hold space in the air.
-        this.vel.y += C.hoverAccel * dt;
-        this.energy = Math.max(0, this.energy - C.hoverDrain * dt);
-        this.hoverSoundT -= dt;
-        if (this.hoverSoundT <= 0) { this.hoverSoundT = 0.1; this.game.audio.hover(); }
-        this.game.particles.burst(this.position.clone().add(V3(rand(-0.6, 0.6), -1.6, rand(-0.6, 0.6))), 0x7cf6c8, 1, { speed: 6, size: 0.3, life: 0.3, gravity: -10 });
       }
     } else {
       this.jumpReady = true;
     }
-    if (this.grounded) this.energy = Math.min(this.energyMax, this.energy + C.energyRegen * dt);
 
     // ---- Move with collision.
     const fallSpeed = -this.vel.y;
@@ -2743,7 +2748,6 @@ class Game {
       el.addEventListener('touchcancel', end, { passive: false });
     };
     bindBtn('tb-fire', () => { input.mouseL = true; }, () => { input.mouseL = false; });
-    bindBtn('tb-fire-l', () => { input.mouseL = true; }, () => { input.mouseL = false; });
     bindBtn('tb-jump', () => { input.keys['Space'] = true; }, () => { input.keys['Space'] = false; });
     bindBtn('tb-dash', () => { if (this.state === 'playing') this.player.tryDash(); });
     bindBtn('tb-pulse', () => { if (this.state === 'playing') this.player.tryPulse(); });
@@ -2820,6 +2824,54 @@ class Game {
   }
 
   addShake(amount) { this.shake = Math.min(1.2, this.shake + amount * this.settings.shake); }
+
+  // Keep bodies from interpenetrating: horizontal circle-vs-circle separation
+  // between enemies, and between each enemy and the player.
+  resolveOverlaps() {
+    const es = this.enemies;
+
+    // Enemy vs enemy — split the correction between the two movers.
+    for (let i = 0; i < es.length; i++) {
+      const a = es[i];
+      for (let j = i + 1; j < es.length; j++) {
+        const b = es[j];
+        if (a.stats.stationary && b.stats.stationary) continue;
+        if (Math.abs(a.position.y - b.position.y) > a.he.y + b.he.y) continue;
+        const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z;
+        const r = a.he.x + b.he.x + 0.4;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= r * r) continue;
+        const d = Math.sqrt(d2) || 0.001;
+        const nx = dx / d, nz = dz / d;
+        const overlap = r - d;
+        const fa = a.stats.stationary ? 0 : (b.stats.stationary ? 1 : 0.5);
+        a.position.x -= nx * overlap * fa; a.position.z -= nz * overlap * fa;
+        b.position.x += nx * overlap * (1 - fa); b.position.z += nz * overlap * (1 - fa);
+        a.group.position.x = a.position.x; a.group.position.z = a.position.z;
+        b.group.position.x = b.position.x; b.group.position.z = b.position.z;
+      }
+    }
+
+    // Player vs enemies — enemies yield, turrets push the player instead.
+    const p = this.player, pr = Math.max(CONFIG.player.halfExtents.x, CONFIG.player.halfExtents.z) + 0.5;
+    for (const e of es) {
+      if (Math.abs(e.position.y - p.position.y) > e.he.y + CONFIG.player.halfExtents.y) continue;
+      const dx = p.position.x - e.position.x, dz = p.position.z - e.position.z;
+      const r = e.he.x + pr + 0.3;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= r * r) continue;
+      const d = Math.sqrt(d2) || 0.001;
+      const nx = d2 === 0 ? 1 : dx / d, nz = d2 === 0 ? 0 : dz / d;
+      const overlap = r - d;
+      if (e.stats.stationary) {
+        p.position.x += nx * overlap; p.position.z += nz * overlap;
+      } else {
+        // Enemies always yield — they must never shove the player around.
+        e.position.x -= nx * overlap; e.position.z -= nz * overlap;
+        e.group.position.x = e.position.x; e.group.position.z = e.position.z;
+      }
+    }
+  }
 
   // Voxel death: clone the enemy's meshes as physics debris that pops apart.
   spawnDebris(group) {
@@ -2915,6 +2967,7 @@ class Game {
 
       for (const e of this.enemies) e.update(dt);
       this.enemies = this.enemies.filter(e => e.alive);
+      this.resolveOverlaps();
 
       for (const pr of this.projectiles) pr.update(dt);
       this.projectiles = this.projectiles.filter(pr => !pr.dead);

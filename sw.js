@@ -1,7 +1,7 @@
 /* Mini Mech FPS — service worker: precache the app shell + Three.js CDN
  * module, then serve cache-first so the game works fully offline.
  * Bump CACHE version when you ship changes to force an update. */
-const CACHE = 'mini-mech-fps-v24';
+const CACHE = 'mini-mech-fps-v26';
 const ASSETS = [
   './',
   './index.html',

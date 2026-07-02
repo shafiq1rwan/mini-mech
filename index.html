@@ -426,6 +426,13 @@
     display: none; background: rgba(255, 209, 102, 0.3); border-color: rgba(255, 209, 102, 0.7); color: #ffd166;
   }
 
+  /* ============================== BOSS BAR ============================== */
+  #boss-bar { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); width: min(440px, 72vw); text-align: center; }
+  body.touch #boss-bar { top: 44px; width: min(340px, 55vw); }
+  #boss-name { font-size: 12px; letter-spacing: 4px; color: #ff9aa8; text-shadow: 0 0 8px rgba(255, 80, 100, 0.7); margin-bottom: 3px; }
+  #boss-bar .bar { height: 10px; margin: 0; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 110, 130, 0.5); }
+  #boss-fill { background: linear-gradient(90deg, #ff3355, #ffb347); width: 100%; }
+
   /* ============================== COMBO & ANNOUNCER ============================== */
   #combo-display {
     position: absolute; top: 66px; left: 50%; transform: translateX(-50%);
@@ -589,6 +596,10 @@
   </div>
 
   <div id="wave-banner"></div>
+  <div id="boss-bar" class="hidden">
+    <div id="boss-name">WIND-UP KING</div>
+    <div class="bar"><div id="boss-fill"></div></div>
+  </div>
   <div id="combo-display"><div id="combo-mult">×2</div><div id="combo-bar"><div></div></div></div>
   <div id="announcer"></div>
   <div id="countdown"></div>
@@ -657,6 +668,8 @@
         <li>The magnet pulse also deletes incoming foam balls.</li>
         <li>Yellow chevron cubes grant 6 seconds of extra speed.</li>
         <li>Gun crates hold toy weapons — shotgun, dart rifle, marble bomber. They revert to the foam cannon when dry.</li>
+        <li>Balloon drones dive-bomb after a wobble — shoot them down or sidestep the dive.</li>
+        <li>The Wind-up King guards wave 10: jump his stomp shockwave and shoot the golden key on his back.</li>
         <li>Clear all 10 waves to win — pick upgrades to match your style.</li>
       </ul>
     </div>
@@ -692,6 +705,7 @@
     <div id="settings-list">
       <div class="set-group">CONTROLS</div>
       <div class="set-row"><label for="set-sens">LOOK SENSITIVITY</label><span id="set-sens-v"></span><input type="range" id="set-sens" min="0.4" max="2.5" step="0.1"></div>
+      <div class="set-row"><label for="set-aim">AIM ASSIST</label><label class="switch"><input type="checkbox" id="set-aim"><span class="track"></span></label></div>
       <div class="set-row"><label for="set-inverty">INVERT Y-AXIS</label><label class="switch"><input type="checkbox" id="set-inverty"><span class="track"></span></label></div>
       <div class="set-group">COMFORT &amp; VIDEO</div>
       <div class="set-row"><label for="set-bright">BRIGHTNESS</label><span id="set-bright-v"></span><input type="range" id="set-bright" min="0.7" max="1.9" step="0.05"></div>
@@ -814,10 +828,18 @@ const CONFIG = {
     toyBot:  { hp: 45, speed: 14, damage: 8,  fireInterval: 1.5, range: 85, projSpeed: 70, score: 100, standY: 3.2 },
     beetle:  { hp: 30, speed: 18, damage: 10, meleeRange: 4.5, meleeInterval: 1.0, backoffTime: 0.9, score: 80, standY: 1.4 },
     turret:  { hp: 90, damage: 10, fireInterval: 1.1, range: 110, projSpeed: 85, turnSpeed: 2.4, score: 150 },
+    balloon: { hp: 25, speed: 10, damage: 14, floatY: 16, diveRange: 26, diveSpeed: 55, score: 90, flying: true },
+    boss: {                     // Wind-up King (every 10th wave)
+      boss: true, hp: 850, speed: 5, damage: 22, score: 1500,
+      stompRange: 20, stompTelegraph: 0.7, stompCooldown: 5,
+      rocketCount: 5, rocketDamage: 12, rocketSpeed: 46, rocketCooldown: 6.5, rocketRange: 110,
+      keyRadius: 3.4, keyMult: 2.5,   // wind-up key weak point: radius & damage multiplier
+    },
     maxAlive: 16,
   },
   waves: {
     winWave: 10,
+    bossEvery: 10,              // boss waves: 10, 20, 30…
     count:      n => 6 + n * 2,
     hpMul:      n => 1 + (n - 1) * 0.12,
     dmgMul:     n => 1 + (n - 1) * 0.07,
@@ -825,6 +847,7 @@ const CONFIG = {
     burst:      n => Math.min(4, 1 + Math.floor((n + 1) / 3)),  // enemies per burst, from different directions
     beetleChance: n => Math.min(0.5, 0.18 + n * 0.04),
     turretChance: n => n >= 2 ? Math.min(0.25, 0.06 + n * 0.02) : 0,
+    balloonChance: n => n >= 3 ? Math.min(0.3, 0.05 + n * 0.03) : 0,
     maxTurrets: 3,
     clearBonus: n => 250 * n,
   },
@@ -857,6 +880,10 @@ const CONFIG = {
     hitPunchScale: 0.16,    // enemy scale punch on hit
     trailInterval: 0.02,    // seconds between trail particles
     trailSize: 0.45,
+    // Aim assist: bend shots toward targets near the crosshair.
+    // angle = capture cone (radians), strength = how far the shot bends.
+    aimAssistDesktop: { angle: 0.06, strength: 0.35 },
+    aimAssistTouch:   { angle: 0.11, strength: 0.6 },
   },
   // Procedural asset palette — edit colors here.
   palette: {
@@ -936,7 +963,7 @@ const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in wi
 // Brightness multiplies tone-mapping exposure; phones default brighter since
 // the night scene reads darker on small screens / outdoor viewing.
 const SETTINGS_KEY = 'mmfps-settings';
-const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, lightQuality: IS_TOUCH ? 1 : 2, brightness: IS_TOUCH ? 1.15 : 1.0, invertY: false };
+const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, lightQuality: IS_TOUCH ? 1 : 2, brightness: IS_TOUCH ? 1.15 : 1.0, invertY: false, aimAssist: true };
 
 /* =====================================================================
  *  AUDIO MANAGER — all sounds synthesized with Web Audio.
@@ -1013,6 +1040,8 @@ class AudioManager {
   shotgun()   { this.noise(0.18, 0.6, 1200); this.tone('square', 220, 60, 0.18, 0.4); }
   dart()      { this.noise(0.1, 0.3, 4000, 'highpass'); this.tone('square', 900, 200, 0.1, 0.3); }
   thump()     { this.tone('sine', 160, 50, 0.25, 0.5); this.noise(0.12, 0.3, 600); }
+  pop()       { this.tone('square', 900, 1500, 0.12, 0.4); this.noise(0.15, 0.5, 3000, 'highpass'); }
+  bossIntro() { [110, 90, 70].forEach((f, i) => this.tone('sawtooth', f, f * 0.8, 0.5, 0.5, i * 0.4)); }
   win()       { [440, 550, 660, 880].forEach((f, i) => this.tone('square', f, f, 0.22, 0.3, i * 0.16)); }
   lose()      { [330, 262, 196, 131].forEach((f, i) => this.tone('sawtooth', f, f * 0.9, 0.3, 0.3, i * 0.2)); }
   click()     { this.tone('square', 700, 500, 0.05, 0.2); }
@@ -1032,6 +1061,7 @@ class UIManager {
       reloadHint: $('reload-hint'), pulseStatus: $('pulse-status'), dashStatus: $('dash-status'),
       boostStatus: $('boost-status'), weaponName: $('weapon-name'),
       banner: $('wave-banner'), damageFlash: $('damage-flash'), hitmarker: $('hitmarker'),
+      bossBar: $('boss-bar'), bossFill: $('boss-fill'),
       comboDisplay: $('combo-display'), comboMult: $('combo-mult'),
       comboBarFill: $('combo-bar').firstElementChild, announcer: $('announcer'),
       countdown: $('countdown'),
@@ -1137,6 +1167,17 @@ class UIManager {
       this.tb.dash.classList.toggle('cooldown', !dashReady);
       this.tb.pulse.textContent = pulseReady ? 'PULSE' : p.pulseTimer.toFixed(1);
       this.tb.pulse.classList.toggle('cooldown', !pulseReady);
+    }
+
+    // Boss health bar (combo display steps down out of its way).
+    const boss = g.enemies.find(e => e.isBoss && e.alive);
+    if (boss) {
+      this.el.bossBar.classList.remove('hidden');
+      this.el.bossFill.style.width = `${clamp(boss.hp / boss.maxHp * 100, 0, 100)}%`;
+      this.el.comboDisplay.style.top = IS_TOUCH ? '82px' : '108px';
+    } else {
+      this.el.bossBar.classList.add('hidden');
+      this.el.comboDisplay.style.top = '';
     }
 
     // Combo chain readout: multiplier + draining window bar.
@@ -1336,8 +1377,9 @@ class ParticleSystem {
     }
   }
 
-  // Burst of cubes from a point.
-  burst(pos, color, count, { speed = 18, size = 0.6, life = 0.6, gravity = 40, spread = 1 } = {}) {
+  // Burst of cubes from a point. `additive` makes them glow (energy fx);
+  // `dir` biases the spray direction (e.g. sparks kicked off a surface).
+  burst(pos, color, count, { speed = 18, size = 0.6, life = 0.6, gravity = 40, spread = 1, additive = false, dir = null } = {}) {
     for (let i = 0; i < count; i++) {
       const mesh = this.pool.pop();
       if (!mesh) return;
@@ -1345,11 +1387,15 @@ class ParticleSystem {
       mesh.position.copy(pos);
       mesh.material.color.setHex(color);
       mesh.material.opacity = 1;
+      mesh.material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+      mesh.material.depthWrite = !additive;
       const s = size * rand(0.5, 1.3);
       mesh.scale.setScalar(s);
+      const vel = V3(rand(-1, 1) * spread, rand(-0.4, 1.2), rand(-1, 1) * spread).normalize();
+      if (dir) vel.multiplyScalar(0.5).addScaledVector(dir, 1).normalize();
       this.active.push({
         mesh, life: 0, maxLife: life * rand(0.6, 1.2), gravity,
-        vel: V3(rand(-1, 1) * spread, rand(-0.4, 1.2), rand(-1, 1) * spread).normalize().multiplyScalar(speed * rand(0.4, 1.1)),
+        vel: vel.multiplyScalar(speed * rand(0.4, 1.1)),
         spin: V3(rand(-8, 8), rand(-8, 8), rand(-8, 8)),
       });
     }
@@ -1361,6 +1407,8 @@ class ParticleSystem {
       p.life += dt;
       if (p.life >= p.maxLife) {
         p.mesh.visible = false;
+        p.mesh.material.blending = THREE.NormalBlending;
+        p.mesh.material.depthWrite = true;
         this.pool.push(p.mesh);
         this.active.splice(i, 1);
         continue;
@@ -1761,6 +1809,74 @@ class ProceduralAssetFactory {
     return { group, parts: { head, barrel, muzzle, blink } };
   }
 
+  buildBalloonDrone() {
+    const P = CONFIG.palette;
+    const group = new THREE.Group();
+    const body = new THREE.Group(); group.add(body);
+    const color = pick([0xff6b6b, 0xffd166, 0x4ecdc4, 0xff5db1, 0x9b5de5]);
+    const balloon = new THREE.Mesh(new THREE.SphereGeometry(2.6, 12, 10), this.clonedMat(color));
+    balloon.position.y = 2.2;
+    balloon.castShadow = true;
+    body.add(balloon);
+    this.part(body, 0.6, 0.6, 0.6, color, 0, -0.5, 0);                  // knot
+    this.part(body, 0.12, 1.8, 0.12, 0x888888, 0, -1.4, 0);             // string
+    const gondola = new THREE.Group();
+    gondola.position.y = -2.8;
+    body.add(gondola);
+    this.part(gondola, 1.6, 1.2, 1.6, P.botDark, 0, 0, 0);              // tiny bot basket
+    const eye = this.part(gondola, 0.9, 0.4, 0.2, P.beetleEye, 0, 0.1, 0.85);
+    eye.material.emissive = new THREE.Color(P.beetleEye);
+    this.part(gondola, 0.3, 0.9, 0.3, 0x888888, -0.8, -0.9, 0).rotation.z = 0.35;  // dangling legs
+    this.part(gondola, 0.3, 0.9, 0.3, 0x888888, 0.8, -0.9, 0).rotation.z = -0.35;
+    return { group, parts: { body, balloon, gondola } };
+  }
+
+  buildWindupKing() {
+    const P = CONFIG.palette;
+    const group = new THREE.Group();
+    const body = new THREE.Group(); group.add(body);
+    this.part(body, 9, 9, 6.5, 0xd9483f, 0, 0, 0);                      // red tin torso
+    const core = this.part(body, 2.6, 2.6, 0.6, 0xffd166, 0, 0.5, 3.4); // glowing chest core
+    core.material.emissive = new THREE.Color(0xffd166);
+    // Armor plates — pop off as phases advance.
+    const plates = [
+      this.part(body, 7.4, 3.6, 0.9, 0x8f2f28, 0, 2.4, 3.2),
+      this.part(body, 7.4, 3.6, 0.9, 0x8f2f28, 0, -2.4, 3.2),
+    ];
+    this.part(body, 5, 4, 4.5, 0xf1c453, 0, 6.5, 0);                    // brass head
+    const eyeL = this.part(body, 1, 1, 0.3, 0xff3355, -1.2, 6.8, 2.35);
+    const eyeR = this.part(body, 1, 1, 0.3, 0xff3355, 1.2, 6.8, 2.35);
+    eyeL.material.emissive = new THREE.Color(0xff3355);
+    eyeR.material.emissive = new THREE.Color(0xff3355);
+    for (let i = -1; i <= 1; i++) this.part(body, 0.9, 1.7, 0.9, 0xffd166, i * 1.6, 9.3, 0);  // crown
+    // Wind-up key on the back — the weak point.
+    const key = new THREE.Group();
+    key.position.set(0, 1, -4.4);
+    body.add(key);
+    this.part(key, 0.9, 0.9, 1.8, 0xffe066, 0, 0, -0.9);                // shaft
+    const wingT = this.part(key, 3.4, 1.2, 0.8, 0xffe066, 0, 1.3, -2.1);
+    const wingB = this.part(key, 3.4, 1.2, 0.8, 0xffe066, 0, -1.3, -2.1);
+    wingT.material.emissive = new THREE.Color(0x996a00);
+    wingB.material.emissive = new THREE.Color(0x996a00);
+
+    const mkLimb = (x, y, len, w) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, y, 0);
+      body.add(pivot);
+      this.part(pivot, w, len, w, P.botDark, 0, -len / 2, 0);
+      return pivot;
+    };
+    const armL = mkLimb(-5.7, 2.5, 6.5, 2.4);
+    const armR = mkLimb(5.7, 2.5, 6.5, 2.4);
+    const legL = mkLimb(-2.4, -4.5, 5, 2.8);
+    const legR = mkLimb(2.4, -4.5, 5, 2.8);
+    this.part(armL, 2.8, 2.4, 2.8, 0xd9483f, 0, -7.3, 0);               // fists
+    this.part(armR, 2.8, 2.4, 2.8, 0xd9483f, 0, -7.3, 0);
+    this.part(legL, 3.4, 1.4, 4.2, 0x8f2f28, 0, -5.4, 0.4);             // big flat feet
+    this.part(legR, 3.4, 1.4, 4.2, 0x8f2f28, 0, -5.4, 0.4);
+    return { group, parts: { body, core, plates, key, armL, armR, legL, legR } };
+  }
+
   /* ------------------ FIRST-PERSON WEAPON MODEL ------------------ */
   buildFoamCannon() {
     const P = CONFIG.palette;
@@ -1974,7 +2090,15 @@ class Projectile {
       case 'marble': geo = new THREE.SphereGeometry(0.8, 10, 8); break;
       default:       geo = new THREE.BoxGeometry(0.7, 0.7, 1.55);      // foam bolt
     }
-    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: opts.color }));
+    // Hot white-ish core + additive colored glow shell = energy tracer look.
+    const coreColor = new THREE.Color(opts.color).lerp(new THREE.Color(0xffffff), 0.55);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: coreColor }));
+    const glow = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
+      color: opts.color, transparent: true, opacity: 0.45,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    glow.scale.setScalar(1.8);
+    this.mesh.add(glow);
     this.mesh.position.copy(this.pos);
     this.mesh.lookAt(this.pos.clone().add(dir));
     game.scene.add(this.mesh);
@@ -1989,11 +2113,11 @@ class Projectile {
     this.mesh.position.copy(this.pos);
     this.mesh.rotation.z += dt * 8;
 
-    // Trail particles (dense, bright, short-lived).
+    // Trail: glowing embers in the projectile's own color.
     this.trailTimer -= dt;
     if (this.trailTimer <= 0) {
       this.trailTimer = CONFIG.feel.trailInterval;
-      this.game.particles.burst(this.pos, this.color, 1, { speed: 2, size: CONFIG.feel.trailSize, life: 0.32, gravity: 0, spread: 0.4 });
+      this.game.particles.burst(this.pos, this.color, 1, { speed: 1.5, size: CONFIG.feel.trailSize, life: 0.28, gravity: 0, spread: 0.3, additive: true });
     }
 
     // World collision (marbles bounce off the floor once).
@@ -2013,7 +2137,12 @@ class Projectile {
         if (this.hitEnemies?.has(e)) continue;                // darts hit each enemy once
         if (this.pos.distanceTo(e.center()) < e.hitRadius + this.radius) {
           this.game.stats.hits++;
-          e.takeDamage(this.damage, this.pos);
+          let dmg = this.damage;
+          // Boss weak point: hits near the wind-up key crit hard.
+          if (e.isBoss && this.pos.distanceTo(e.keyWorldPos()) < CONFIG.enemies.boss.keyRadius) {
+            dmg *= CONFIG.enemies.boss.keyMult;
+          }
+          e.takeDamage(dmg, this.pos);
           if (this.knockbackAmt && e.alive) {
             e.knockback.add(this.vel.clone().setY(0).normalize().multiplyScalar(this.knockbackAmt));
           }
@@ -2041,14 +2170,15 @@ class Projectile {
     if (this.dead) return;
     this.dead = true;
     if (this.explodeOpts) {
-      this.game.explodeAt(this.pos, this.explodeOpts.radius, this.explodeOpts.damage);
+      this.game.explodeAt(this.pos, this.explodeOpts.radius, this.explodeOpts.damage, this.fromPlayer);
     } else if (impact) {
-      this.game.particles.burst(this.pos, this.color, 8, { speed: 18, size: 0.5, life: 0.4, gravity: 30 });
-      this.game.particles.burst(this.pos, 0xffffff, 3, { speed: 26, size: 0.3, life: 0.2, gravity: 0 });
+      // White core flash, then colored sparks kicked back along the shot.
+      const back = this.vel.clone().normalize().negate();
+      this.game.particles.burst(this.pos, 0xffffff, 1, { speed: 0.5, size: 1.7, life: 0.12, gravity: 0, additive: true });
+      this.game.particles.burst(this.pos, this.color, 9, { speed: 24, size: 0.4, life: 0.3, gravity: 26, additive: true, dir: back });
     }
     this.game.scene.remove(this.mesh);
-    this.mesh.geometry.dispose();
-    this.mesh.material.dispose();
+    this.mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
   }
 }
 
@@ -2159,6 +2289,8 @@ class Enemy {
     this.hp = stats.hp * hpMul;
     this.maxHp = this.hp;
     this.damage = stats.damage * dmgMul;
+    this.dmgMul = dmgMul;
+    this.isBoss = !!stats.boss;
     this.alive = true;
     this.stun = 0;
     this.flashT = 0;
@@ -2215,12 +2347,12 @@ class Enemy {
     if (!this.alive) return;
     this.hp -= dmg;
     this.flashT = CONFIG.feel.hitFlashTime;
-    this.hitPunch = 1;
+    this.hitPunch = this.isBoss ? 0.25 : 1;            // the King barely flinches
     for (const m of this.materials) m.emissive.setHex(0xffffff);
     this.game.audio.hit();
     this.game.ui.hitmarker();
     this.game.ui.damageNumber(hitPos ?? this.center(), dmg, dmg >= 30);
-    this.game.particles.burst(hitPos ?? this.center(), 0xffe066, 8, { speed: 14, size: 0.45, life: 0.32 });
+    this.game.particles.burst(hitPos ?? this.center(), 0xffe066, 8, { speed: 16, size: 0.45, life: 0.3, additive: true });
     if (this.hp <= 0) this.die();
   }
 
@@ -2279,8 +2411,14 @@ class Enemy {
       // Stunned shiver.
       this.group.position.x = this.position.x + rand(-0.15, 0.15);
       this.group.position.z = this.position.z + rand(-0.15, 0.15);
-      // Still apply knockback while stunned (movers only).
-      if (!this.stats.stationary) this.moveWithCollision(this.knockback, dt);
+      // Still apply knockback while stunned (movers only; fliers skip gravity).
+      if (this.stats.flying) {
+        this.position.x += this.knockback.x * dt;
+        this.position.z += this.knockback.z * dt;
+        this.group.position.copy(this.position);
+      } else if (!this.stats.stationary) {
+        this.moveWithCollision(this.knockback, dt);
+      }
       return false;
     }
     return this.spawnT >= 0.25;
@@ -2301,7 +2439,7 @@ class Enemy {
     if (horizontalVel.lengthSq() > 9) this.wantMove = true;
     this.moveCheckT += dt;
     if (this.moveCheckT >= 2.5) {
-      if (this.wantMove && this.movedDist < 2.5 && this.distToPlayer() > 25) this.relocate();
+      if (this.wantMove && this.movedDist < 2.5 && this.distToPlayer() > 25 && !this.isBoss) this.relocate();
       this.moveCheckT = 0;
       this.movedDist = 0;
       this.wantMove = false;
@@ -2511,6 +2649,246 @@ class TurretToy extends Enemy {
   }
 }
 
+/* ---------------------- BALLOON DRONE — floating kamikaze ---------------------- */
+class BalloonDrone extends Enemy {
+  constructor(game, pos, hpMul, dmgMul) {
+    super(game, pos, CONFIG.enemies.balloon, hpMul, dmgMul);
+    const built = game.factory.buildBalloonDrone();
+    this.group.add(built.group);
+    this.parts = built.parts;
+    this.collectMaterials();
+    this.he.set(2.2, 2.8, 2.2);
+    this.hitRadius = 3.6;
+    this.position.y = 3;
+    this.mode = 'rise';                                // rise → float → telegraph → dive
+    this.diveTimer = rand(1.5, 3);
+    this.diveDir = V3();
+  }
+
+  update(dt) {
+    if (!this.baseUpdate(dt)) return;
+    this.animT += dt;
+    const S = this.stats, p = this.game.player;
+
+    if (this.mode === 'rise') {
+      this.position.y += dt * 9;
+      if (this.position.y >= S.floatY) { this.position.y = S.floatY; this.mode = 'float'; }
+      this.facePlayer(dt, 4);
+    } else if (this.mode === 'float') {
+      this.position.y = S.floatY + Math.sin(this.animT * 1.8) * 1.2;
+      const d = this.dirToPlayer();
+      this.position.x += (d.x * S.speed + this.knockback.x) * dt;
+      this.position.z += (d.z * S.speed + this.knockback.z) * dt;
+      this.facePlayer(dt, 4);
+      this.diveTimer -= dt;
+      const horiz = Math.hypot(p.position.x - this.position.x, p.position.z - this.position.z);
+      if (horiz < S.diveRange && this.diveTimer <= 0) {
+        this.mode = 'telegraph';                       // wobble warning before the dive
+        this.teleT = 0.6;
+        this.game.audio.tone('square', 700, 1100, 0.25, 0.25);
+      }
+    } else if (this.mode === 'telegraph') {
+      this.teleT -= dt;
+      this.group.position.x = this.position.x + rand(-0.35, 0.35);
+      this.group.position.z = this.position.z + rand(-0.35, 0.35);
+      if (this.teleT <= 0) {
+        this.mode = 'dive';
+        this.diveDir.copy(p.position).setY(1.5).sub(this.position).normalize();
+        this.game.audio.tone('sawtooth', 500, 950, 0.3, 0.3);
+      }
+    } else {                                           // dive
+      this.position.addScaledVector(this.diveDir, S.diveSpeed * dt);
+      if (this.position.distanceTo(p.position) < 3.5) return this.selfDestruct(true);
+      if (this.position.y < 1.5 || pointInWorld(this.game.colliders, this.position)) return this.selfDestruct(false);
+    }
+
+    this.position.x = clamp(this.position.x, -100, 100);
+    this.position.z = clamp(this.position.z, -100, 100);
+    if (this.mode !== 'telegraph') this.group.position.copy(this.position);
+    // Idle animation: balloon squash + gondola sway.
+    this.parts.balloon.scale.y = 1 + Math.sin(this.animT * 3) * 0.05;
+    this.parts.gondola.rotation.z = Math.sin(this.animT * 2.2) * 0.15;
+  }
+
+  confetti() {
+    for (const c of [0xff6b6b, 0xffd166, 0x4ecdc4, 0xff5db1]) {
+      this.game.particles.burst(this.center(), c, 7, { speed: 26, size: 0.45, life: 0.6, gravity: 50 });
+    }
+    this.game.audio.pop();
+  }
+
+  // Kamikaze detonation — no score/combo, unlike a player kill.
+  selfDestruct(hitPlayer) {
+    if (!this.alive) return;
+    this.alive = false;
+    if (hitPlayer || this.position.distanceTo(this.game.player.position) < 6) {
+      this.game.player.takeDamage(this.damage);
+    }
+    this.confetti();
+    this.game.spawnDebris(this.group);
+    this.destroy();
+  }
+
+  die() {
+    this.confetti();
+    super.die();
+  }
+}
+
+/* ---------------------- WIND-UP KING — the boss ---------------------- */
+class WindupKing extends Enemy {
+  constructor(game, pos, hpMul, dmgMul) {
+    super(game, pos, CONFIG.enemies.boss, hpMul, dmgMul);
+    const built = game.factory.buildWindupKing();
+    this.group.add(built.group);
+    built.group.position.y = 1.5;                      // feet on the floor
+    this.parts = built.parts;
+    this.collectMaterials();
+    this.he.set(5.5, 8, 5.5);
+    this.position.y = this.he.y;
+    this.hitRadius = 8.5;
+    this.stompT = 3.5;
+    this.rocketT = 5;
+    this.attack = null;                                // { type, t } while winding up
+    this.phase = 0;
+    this.walkT = 0;
+  }
+
+  keyWorldPos() { return this.parts.key.getWorldPosition(V3()); }
+
+  update(dt) {
+    if (!this.baseUpdate(dt)) return;
+    this.animT += dt;
+    const S = this.stats;
+    const dist = this.distToPlayer();
+
+    // Phase transitions shed armor plates and speed him up.
+    const frac = this.hp / this.maxHp;
+    if (this.phase === 0 && frac < 0.66) this.enterPhase(1);
+    if (this.phase === 1 && frac < 0.33) this.enterPhase(2);
+
+    // The key always winds; frantically while an attack charges.
+    this.parts.key.rotation.z += dt * (this.attack ? 9 : 2.5);
+
+    if (this.attack) {
+      this.attack.t -= dt;
+      if (this.attack.type === 'stomp') {
+        this.parts.legL.rotation.x = -0.9 * clamp(1 - this.attack.t / S.stompTelegraph, 0, 1);
+        if (this.attack.t <= 0) this.doStomp();
+      } else {
+        this.parts.core.material.emissiveIntensity = 1 + Math.sin(this.animT * 20) * 0.8;
+        if (this.attack.t <= 0) this.doRockets();
+      }
+      return;                                          // roots in place while attacking
+    }
+
+    // Lumber toward the player.
+    this.facePlayer(dt, 2.2);
+    const desired = V3().copy(this.knockback);
+    if (dist > 12) {
+      desired.add(this.dirToPlayer().multiplyScalar(S.speed + this.phase * 1.5));
+      this.walkT += dt;
+    }
+    this.moveWithCollision(desired, dt);
+    const swing = Math.sin(this.walkT * 4) * 0.4;
+    this.parts.legL.rotation.x = swing;
+    this.parts.legR.rotation.x = -swing;
+    this.parts.armL.rotation.x = -swing * 0.5;
+    this.parts.armR.rotation.x = swing * 0.5;
+    this.parts.body.position.y = Math.abs(Math.sin(this.walkT * 4)) * 0.5;
+
+    // Pick the next attack.
+    this.stompT -= dt;
+    this.rocketT -= dt;
+    const cdMul = 1 - this.phase * 0.18;
+    if (dist < S.stompRange && this.stompT <= 0) {
+      this.attack = { type: 'stomp', t: S.stompTelegraph };
+      this.stompT = S.stompCooldown * cdMul;
+      this.game.audio.tone('sawtooth', 100, 55, 0.5, 0.45);
+    } else if (dist < S.rocketRange && this.rocketT <= 0) {
+      this.attack = { type: 'rockets', t: 0.8 };
+      this.rocketT = S.rocketCooldown * cdMul;
+      this.game.audio.tone('square', 200, 420, 0.4, 0.3);
+    }
+  }
+
+  enterPhase(p) {
+    this.phase = p;
+    // Pop an armor plate off as flying debris.
+    const plate = this.parts.plates[p - 1];
+    if (plate) {
+      const wp = V3(), wq = new THREE.Quaternion();
+      plate.getWorldPosition(wp);
+      plate.getWorldQuaternion(wq);
+      plate.removeFromParent();
+      plate.position.copy(wp);
+      plate.quaternion.copy(wq);
+      plate.material.transparent = true;
+      this.game.scene.add(plate);
+      this.game.debris.push({
+        mesh: plate, life: 0, maxLife: 1.2,
+        vel: V3(rand(-14, 14), rand(18, 28), rand(-14, 14)),
+        spin: V3(rand(-9, 9), rand(-9, 9), rand(-9, 9)),
+      });
+    }
+    this.game.particles.burst(this.center(), 0xd9483f, 16, { speed: 26, size: 0.7, life: 0.6 });
+    this.game.addShake(0.6);
+    this.game.audio.explosion();
+    this.game.ui.announce(p === 1 ? 'ARMOR CRACKED!' : 'FINAL PHASE!');
+  }
+
+  doStomp() {
+    this.attack = null;
+    this.parts.legL.rotation.x = 0;
+    const S = this.stats;
+    this.game.audio.land();
+    this.game.audio.explosion();
+    this.game.addShake(0.9);
+    this.game.spawnGroundRing(this.position.clone().setY(1), S.stompRange, 0xffd166);
+    this.game.particles.burst(this.position.clone().setY(1), 0xc9a06c, 18, { speed: 24, size: 0.7, life: 0.5 });
+    const p = this.game.player;
+    const d = this.distToPlayer();
+    if (d < S.stompRange && p.grounded) {              // jump to dodge!
+      p.takeDamage(this.damage);
+      p.vel.x += (p.position.x - this.position.x) / d * 30;
+      p.vel.z += (p.position.z - this.position.z) / d * 30;
+      p.vel.y = 18;
+    }
+  }
+
+  doRockets() {
+    this.attack = null;
+    this.parts.core.material.emissiveIntensity = 1;
+    const S = this.stats;
+    const origin = this.center().add(V3(0, 5, 0));
+    for (let i = 0; i < S.rocketCount; i++) {
+      const target = this.game.player.position.clone().add(V3(rand(-14, 14), 0, rand(-14, 14)));
+      const flat = target.sub(origin).setY(0);
+      flat.normalize();
+      const dir = flat.multiplyScalar(0.8).add(V3(0, 0.55, 0)).normalize();
+      this.game.projectiles.push(new Projectile(this.game, origin, dir, {
+        speed: S.rocketSpeed * rand(0.9, 1.1), damage: 4,
+        color: 0xff5db1, fromPlayer: false, radius: 1.2, maxLife: 4, gravity: 40,
+        explode: { radius: 9, damage: S.rocketDamage * this.dmgMul },
+      }));
+    }
+    this.game.audio.thump();
+  }
+
+  die() {
+    // Grand finale: long slow-mo, extra fireworks, guaranteed loot.
+    this.game.slowmoT = 1.0;
+    this.game.addShake(1.0);
+    for (let i = 0; i < 3; i++) {
+      this.game.particles.burst(this.center().add(V3(rand(-5, 5), rand(-4, 6), rand(-5, 5))), 0xffb066, 16, { speed: 34, size: 0.9, life: 0.8 });
+    }
+    this.game.pickups.push(new Pickup(this.game, this.position.clone().add(V3(-6, 0, 0)), 'health'));
+    this.game.pickups.push(new Pickup(this.game, this.position.clone().add(V3(6, 0, 0)), 'ammo'));
+    this.game.pickups.push(new Pickup(this.game, this.position.clone(), 'weapon', pick(WEAPON_DROPS)));
+    super.die();
+  }
+}
+
 /* =====================================================================
  *  WEAPONS
  * ===================================================================== */
@@ -2562,6 +2940,24 @@ class Weapon {
     this.game.camera.getWorldDirection(camDir);
     const target = this.game.camera.getWorldPosition(V3()).addScaledVector(camDir, 200);
     const baseDir = target.sub(muzzlePos).normalize();
+
+    // Aim assist: bend toward the target nearest the crosshair, inside a
+    // small cone (widened for close/large enemies). Toggleable in settings.
+    if (this.game.settings.aimAssist) {
+      const cfg = IS_TOUCH ? CONFIG.feel.aimAssistTouch : CONFIG.feel.aimAssistDesktop;
+      let bestDir = null, bestAng = Infinity;
+      for (const e of this.game.enemies) {
+        if (!e.alive) continue;
+        const to = e.center().sub(muzzlePos);
+        const dist = to.length();
+        if (dist < 6 || dist > 170) continue;
+        to.normalize();
+        const ang = baseDir.angleTo(to);
+        const allow = cfg.angle + Math.min(0.08, e.hitRadius / dist);
+        if (ang < allow && ang < bestAng) { bestAng = ang; bestDir = to.clone(); }
+      }
+      if (bestDir) baseDir.lerp(bestDir, cfg.strength).normalize();
+    }
 
     for (let i = 0; i < def.pellets; i++) {
       const dir = baseDir.clone();
@@ -2886,17 +3282,18 @@ class Player {
  *  then the enemy pops in with an overshoot scale-up.
  * ===================================================================== */
 class SpawnPortal {
-  constructor(game, pos, onSpawn) {
+  constructor(game, pos, onSpawn, scale = 1) {
     this.game = game;
     this.pos = pos.clone();
     this.onSpawn = onSpawn;
+    this.scale = scale;
     this.t = 0;
-    this.dur = 0.55;
+    this.dur = scale > 1 ? 1.4 : 0.55;                 // big portals telegraph longer
     this.done = false;
 
     const groundY = this.pos.y + 0.4;
     this.ring = new THREE.Mesh(
-      new THREE.TorusGeometry(3.2, 0.35, 6, 24),
+      new THREE.TorusGeometry(3.2 * scale, 0.35 * scale, 6, 24),
       new THREE.MeshBasicMaterial({ color: 0xff5db1, transparent: true, opacity: 0.9 })
     );
     this.ring.rotation.x = Math.PI / 2;
@@ -2904,10 +3301,10 @@ class SpawnPortal {
     game.scene.add(this.ring);
 
     this.column = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.2, 2.8, 10, 10, 1, true),
+      new THREE.CylinderGeometry(2.2 * scale, 2.8 * scale, 10 * scale, 10, 1, true),
       new THREE.MeshBasicMaterial({ color: 0xff5db1, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
     );
-    this.column.position.set(this.pos.x, groundY + 5, this.pos.z);
+    this.column.position.set(this.pos.x, groundY + 5 * scale, this.pos.z);
     game.scene.add(this.column);
   }
 
@@ -2969,12 +3366,27 @@ class WaveManager {
   startWave(n) {
     this.wave = n;
     const W = CONFIG.waves;
-    this.queued = W.count(n);
-    this.spawnTimer = 0.5;
+    this.isBossWave = n % W.bossEvery === 0;
     this.active = true;
     this.turretsSpawned = 0;
-    this.game.ui.banner(`WAVE ${n}<small>${this.queued} HOSTILES INBOUND</small>`);
-    this.game.audio.waveStart();
+
+    if (this.isBossWave) {
+      // Boss wave: the Wind-up King arrives through a giant portal, with a
+      // trickle of minions to keep the pressure up.
+      this.queued = 4;
+      this.spawnTimer = 3;
+      this.game.ui.banner(`WAVE ${n}<small>THE WIND-UP KING APPROACHES</small>`, 3);
+      this.game.audio.bossIntro();
+      const g = this.game;
+      const spot = this.findClearSpot(pick(this.spawnPoints).clone(), 6);
+      g.portals.push(new SpawnPortal(g, spot,
+        () => g.enemies.push(new WindupKing(g, spot, W.hpMul(n), W.dmgMul(n))), 2.2));
+    } else {
+      this.queued = W.count(n);
+      this.spawnTimer = 0.5;
+      this.game.ui.banner(`WAVE ${n}<small>${this.queued} HOSTILES INBOUND</small>`);
+      this.game.audio.waveStart();
+    }
   }
 
   update(dt) {
@@ -3046,7 +3458,9 @@ class WaveManager {
     spot.x += rand(-5, 5); spot.z += rand(-5, 5);
     const clear = this.findClearSpot(spot);            // never inside furniture
 
-    if (Math.random() < W.beetleChance(this.wave)) {
+    if (Math.random() < W.balloonChance(this.wave)) {
+      g.portals.push(new SpawnPortal(g, clear, () => g.enemies.push(new BalloonDrone(g, clear, hpMul, dmgMul))));
+    } else if (Math.random() < W.beetleChance(this.wave)) {
       g.portals.push(new SpawnPortal(g, clear, () => g.enemies.push(new BeetleDrone(g, clear, hpMul, dmgMul))));
     } else {
       g.portals.push(new SpawnPortal(g, clear, () => g.enemies.push(new ToyBot(g, clear, hpMul, dmgMul))));
@@ -3092,6 +3506,7 @@ class Game {
     this.pickups = [];
     this.debris = [];
     this.portals = [];
+    this.rings = [];
 
     this.settings = this.loadSettings();
 
@@ -3262,6 +3677,7 @@ class Game {
       input.checked = s[key];
       input.addEventListener('change', () => { s[key] = input.checked; this.applySettings(); this.saveSettings(); });
     };
+    bindCheck('set-aim', 'aimAssist');
     bindCheck('set-inverty', 'invertY');
 
     $('btn-settings-start').onclick = () => { this.audio.init(); this.audio.click(); this.openSettings('start-screen'); };
@@ -3579,9 +3995,9 @@ class Game {
 
   addShake(amount) { this.shake = Math.min(1.2, this.shake + amount * this.settings.shake); }
 
-  // Area explosion (marble bomber, future explosives): damage with falloff,
-  // chunky particles, and a flash light. Never hurts the player.
-  explodeAt(pos, radius, damage) {
+  // Area explosion. Player explosives hurt enemies; enemy explosives
+  // (boss rockets) hurt the player — never both.
+  explodeAt(pos, radius, damage, fromPlayer = true) {
     this.audio.explosion();
     this.addShake(0.5);
     this.particles.burst(pos, 0xffb066, 22, { speed: 34, size: 0.8, life: 0.6 });
@@ -3591,12 +4007,46 @@ class Game {
       this.flashLight.position.copy(pos);
       this.flashLight.intensity = 6;
     }
-    for (const e of this.enemies) {
-      if (!e.alive) continue;
-      const d = e.center().distanceTo(pos);
-      if (d < radius + e.hitRadius) {
-        e.takeDamage(damage * (1 - 0.5 * clamp(d / radius, 0, 1)), e.center());
+    if (fromPlayer) {
+      for (const e of this.enemies) {
+        if (!e.alive) continue;
+        const d = e.center().distanceTo(pos);
+        if (d < radius + e.hitRadius) {
+          e.takeDamage(damage * (1 - 0.5 * clamp(d / radius, 0, 1)), e.center());
+        }
       }
+    } else {
+      const d = this.player.position.distanceTo(pos);
+      if (d < radius) this.player.takeDamage(damage * (1 - 0.5 * clamp(d / radius, 0, 1)));
+    }
+  }
+
+  // Expanding ground ring (boss stomp shockwave, etc.).
+  spawnGroundRing(pos, radius, color) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1, 0.4, 6, 28),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.copy(pos);
+    this.scene.add(ring);
+    this.rings.push({ mesh: ring, t: 0, radius });
+  }
+
+  updateRings(dt) {
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.t += dt;
+      const k = r.t / 0.5;
+      if (k >= 1) {
+        this.scene.remove(r.mesh);
+        r.mesh.geometry.dispose();
+        r.mesh.material.dispose();
+        this.rings.splice(i, 1);
+        continue;
+      }
+      r.mesh.scale.setScalar(1 + k * r.radius);
+      r.mesh.material.opacity = 0.9 * (1 - k);
     }
   }
 
@@ -3610,7 +4060,9 @@ class Game {
       const a = es[i];
       for (let j = i + 1; j < es.length; j++) {
         const b = es[j];
-        if (a.stats.stationary && b.stats.stationary) continue;
+        const aHeavy = a.stats.stationary || a.isBoss;
+        const bHeavy = b.stats.stationary || b.isBoss;
+        if (aHeavy && bHeavy) continue;
         if (Math.abs(a.position.y - b.position.y) > a.he.y + b.he.y) continue;
         const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z;
         const r = a.he.x + b.he.x + 0.4;
@@ -3619,7 +4071,7 @@ class Game {
         const d = Math.sqrt(d2) || 0.001;
         const nx = dx / d, nz = dz / d;
         const overlap = r - d;
-        const fa = a.stats.stationary ? 0 : (b.stats.stationary ? 1 : 0.5);
+        const fa = aHeavy ? 0 : (bHeavy ? 1 : 0.5);
         a.position.x -= nx * overlap * fa; a.position.z -= nz * overlap * fa;
         b.position.x += nx * overlap * (1 - fa); b.position.z += nz * overlap * (1 - fa);
         a.group.position.x = a.position.x; a.group.position.z = a.position.z;
@@ -3638,7 +4090,7 @@ class Game {
       const d = Math.sqrt(d2) || 0.001;
       const nx = d2 === 0 ? 1 : dx / d, nz = d2 === 0 ? 0 : dz / d;
       const overlap = r - d;
-      if (e.stats.stationary) {
+      if (e.stats.stationary || e.isBoss) {            // immovable: player yields
         p.position.x += nx * overlap; p.position.z += nz * overlap;
       } else {
         // Enemies always yield — they must never shove the player around.
@@ -3791,6 +4243,7 @@ class Game {
     if (this.state === 'playing' || this.state === 'over') {
       this.particles.update(dt);
       this.updateDebris(dt);
+      this.updateRings(dt);
       this.player.pulse.update(dt);
     }
 

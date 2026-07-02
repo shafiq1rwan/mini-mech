@@ -694,6 +694,7 @@
       <div class="set-row"><label for="set-sens">LOOK SENSITIVITY</label><span id="set-sens-v"></span><input type="range" id="set-sens" min="0.4" max="2.5" step="0.1"></div>
       <div class="set-row"><label for="set-inverty">INVERT Y-AXIS</label><label class="switch"><input type="checkbox" id="set-inverty"><span class="track"></span></label></div>
       <div class="set-group">COMFORT &amp; VIDEO</div>
+      <div class="set-row"><label for="set-bright">BRIGHTNESS</label><span id="set-bright-v"></span><input type="range" id="set-bright" min="0.7" max="1.9" step="0.05"></div>
       <div class="set-row"><label for="set-shake">SCREEN SHAKE</label><span id="set-shake-v"></span><input type="range" id="set-shake" min="0" max="1.5" step="0.1"></div>
       <div class="set-row"><label for="set-fov">FIELD OF VIEW</label><span id="set-fov-v"></span><input type="range" id="set-fov" min="60" max="100" step="1"></div>
       <div class="set-row"><label for="set-light">LIGHTING QUALITY</label><span id="set-light-v"></span><input type="range" id="set-light" min="0" max="2" step="1"></div>
@@ -760,22 +761,22 @@ const CONFIG = {
     roomSize: 210,          // width/depth of the bedroom
     roomHeight: 92,
     gravity: 120,
-    fogColor: 0x141c2e,     // night-blue depth haze
-    fogNear: 100,
-    fogFar: 300,
+    fogColor: 0xd7e8f7,     // bright daytime depth haze
+    fogNear: 130,
+    fogFar: 340,
   },
-  // Cozy-night lighting rig. Quality (settings): 0 = low (no shadows, no
-  // dynamic lights), 1 = medium (soft 1024 shadows + muzzle light),
+  // Sunny-afternoon lighting rig. Quality (settings): 0 = low (no shadows,
+  // no dynamic lights), 1 = medium (soft 1024 shadows + muzzle light),
   // 2 = high (2048 shadows + explosion flashes).
   lighting: {
-    exposure: 1.15,         // ACES tone-mapping exposure
-    hemiSky: 0x55688f,      // cool night bounce from above
-    hemiGround: 0x4a3628,   // warm carpet bounce from below
-    hemiIntensity: 0.9,     // strong fill = soft, readable shadows (not pitch black)
-    moonColor: 0xbcd0ff,    // directional moonlight through the window
-    moonIntensity: 1.0,
-    lampColor: 0xffc078,    // warm ceiling-lamp pool in the room's center
-    lampIntensity: 1.4,
+    exposure: 1.0,          // ACES tone-mapping exposure (× brightness setting)
+    hemiSky: 0xbde0fe,      // blue-sky bounce from above
+    hemiGround: 0xa9713f,   // warm carpet bounce from below
+    hemiIntensity: 0.85,    // strong fill = soft, readable shadows
+    moonColor: 0xfff2d8,    // warm sunlight through the window
+    moonIntensity: 1.5,
+    lampColor: 0xffc078,    // subtle warm accent from the ceiling lamp
+    lampIntensity: 0.6,
     lampRange: 200,
     muzzleColor: 0x9dff3a,
     flashColor: 0xff9a4d,   // explosion flash
@@ -932,8 +933,10 @@ const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
 // User settings (persisted to localStorage). Lighting quality: 0 low / 1 medium / 2 high.
+// Brightness multiplies tone-mapping exposure; phones default brighter since
+// the night scene reads darker on small screens / outdoor viewing.
 const SETTINGS_KEY = 'mmfps-settings';
-const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, lightQuality: IS_TOUCH ? 1 : 2, invertY: false };
+const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, lightQuality: IS_TOUCH ? 1 : 2, brightness: IS_TOUCH ? 1.15 : 1.0, invertY: false };
 
 /* =====================================================================
  *  AUDIO MANAGER — all sounds synthesized with Web Audio.
@@ -1448,8 +1451,8 @@ class ProceduralAssetFactory {
     // Ceiling (solid — stops hover escapes over the walls).
     this.box(S, 2, S, P.ceiling, 0, H + 1, 0, { shadow: false });
 
-    // Window (flat, moonlit glow) + frame on the north wall.
-    this.box(50, 40, 0.8, 0xdce8ff, -40, 52, -half + 1.6, { collider: false, shadow: false, emissive: 0x9db8e8 });
+    // Window (flat, sunlit glow) + frame on the north wall.
+    this.box(50, 40, 0.8, 0xfff6d8, -40, 52, -half + 1.6, { collider: false, shadow: false, emissive: 0xfff2c0 });
     this.box(54, 3, 1.4, 0xffffff, -40, 73, -half + 1.8, { collider: false });
     this.box(54, 3, 1.4, 0xffffff, -40, 31, -half + 1.8, { collider: false });
     this.box(3, 44, 1.4, 0xffffff, -40, 52, -half + 1.8, { collider: false });
@@ -3147,16 +3150,16 @@ class Game {
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);                       // so the FP weapon renders
 
-    // Night rig: cool ambient bounce + moonlight from the window + one warm
-    // lamp pool. Muzzle/explosion lights are reusable singletons so the
-    // scene never exceeds three point lights.
+    // Day rig: bright sky bounce + warm sunlight through the window + a
+    // subtle lamp accent. Muzzle/explosion lights are reusable singletons
+    // so the scene never exceeds three point lights.
     const L = CONFIG.lighting;
     const hemi = new THREE.HemisphereLight(L.hemiSky, L.hemiGround, L.hemiIntensity);
     this.scene.add(hemi);
     this.hemi = hemi;
 
     const moon = new THREE.DirectionalLight(L.moonColor, L.moonIntensity);
-    moon.position.set(-60, 80, -40);                   // through the window
+    moon.position.set(-60, 80, -40);                   // sun angle, through the window
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
     const half = W.roomSize / 2 + 10;
@@ -3209,6 +3212,7 @@ class Game {
     const s = this.settings;
     this.baseFov = s.fov;
     this.audio.setVolume(s.volume);
+    this.renderer.toneMappingExposure = CONFIG.lighting.exposure * s.brightness;
 
     // Lighting quality: 0 low / 1 medium / 2 high.
     const q = Math.round(s.lightQuality);
@@ -3252,6 +3256,7 @@ class Game {
     bindSlider('set-vol', 'volume', v => `${Math.round(v * 100)}%`);
     bindSlider('set-fov', 'fov', v => `${Math.round(v)}°`);
     bindSlider('set-light', 'lightQuality', v => ['LOW', 'MED', 'HIGH'][Math.round(v)]);
+    bindSlider('set-bright', 'brightness', v => `${Math.round(v * 100)}%`);
     const bindCheck = (id, key) => {
       const input = $(id);
       input.checked = s[key];

@@ -2,7 +2,7 @@
   "name": "Mini Mech FPS — Giant Bedroom",
   "short_name": "MiniMech",
   "description": "Toy-scale voxel arena FPS: pilot a tiny mech against hostile toys in a giant bedroom.",
-  "start_url": "./mini-mech-fps.html",
+  "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
   "orientation": "landscape",

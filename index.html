@@ -300,6 +300,19 @@
     position: fixed; inset: 0; z-index: 25; display: flex; flex-direction: column;
     align-items: center; justify-content: center; background: rgba(6, 12, 24, 0.82); pointer-events: auto;
     padding: 16px; box-sizing: border-box;
+    animation: panelFade 0.35s ease-out;               /* restarts each time it's shown */
+  }
+  @keyframes panelFade { from { opacity: 0; } to { opacity: 1; } }
+  #upgrade-panel .eyebrow, #upgrade-panel h2 { animation: slideDown 0.4s 0.05s ease-out both; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-18px); } to { opacity: 1; transform: none; } }
+  #upgrade-options button { opacity: 0; animation: cardIn 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) forwards; }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(32px) scale(0.9); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #upgrade-panel, #upgrade-panel .eyebrow, #upgrade-panel h2 { animation: none; }
+    #upgrade-options button { animation: none; opacity: 1; }
   }
   #upgrade-panel .eyebrow { margin-bottom: 4px; }
   #upgrade-panel h2 {
@@ -367,6 +380,20 @@
     100% { opacity: 0; transform: translate(-50%, -60%) scale(0.95); }
   }
 
+  #countdown {
+    position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%);
+    font-size: clamp(60px, 14vw, 110px); font-weight: bold; letter-spacing: 6px;
+    color: #ffe066; text-shadow: 0 0 30px rgba(255, 210, 80, 0.8); opacity: 0;
+  }
+  #countdown.show { animation: countPop 0.9s ease-out forwards; }
+  @keyframes countPop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(2.2); }
+    20%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    80%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+  }
+  @media (prefers-reduced-motion: reduce) { #countdown.show { animation: none; opacity: 1; } }
+
   .best-line { color: #ffe066; font-size: 12px; letter-spacing: 2px; margin: -10px 0 20px; text-shadow: 0 0 10px rgba(255, 210, 80, 0.5); }
   #new-best {
     color: #7cf6c8; font-size: 13px; letter-spacing: 3px; margin: 2px 0 8px;
@@ -424,6 +451,7 @@
   <div id="wave-banner"></div>
   <div id="combo-display"><div id="combo-mult">×2</div><div id="combo-bar"><div></div></div></div>
   <div id="announcer"></div>
+  <div id="countdown"></div>
 </div>
 
 <div id="dmg-layer"></div>
@@ -480,6 +508,7 @@
         <li>Keep moving — bots strafe around you and beetles rush.</li>
         <li>The magnet pulse also deletes incoming foam balls.</li>
         <li>Yellow chevron cubes grant 6 seconds of extra speed.</li>
+        <li>Gun crates hold toy weapons — shotgun, dart rifle, marble bomber. They revert to the foam cannon when dry.</li>
         <li>Clear all 10 waves to win — pick upgrades to match your style.</li>
       </ul>
     </div>
@@ -516,7 +545,7 @@
       <div class="set-group">COMFORT &amp; VIDEO</div>
       <div class="set-row"><label for="set-shake">SCREEN SHAKE</label><span id="set-shake-v"></span><input type="range" id="set-shake" min="0" max="1.5" step="0.1"></div>
       <div class="set-row"><label for="set-fov">FIELD OF VIEW</label><span id="set-fov-v"></span><input type="range" id="set-fov" min="60" max="100" step="1"></div>
-      <div class="set-row"><label for="set-shadows">SHADOWS</label><label class="switch"><input type="checkbox" id="set-shadows"><span class="track"></span></label></div>
+      <div class="set-row"><label for="set-light">LIGHTING QUALITY</label><span id="set-light-v"></span><input type="range" id="set-light" min="0" max="2" step="1"></div>
       <div class="set-group">AUDIO</div>
       <div class="set-row"><label for="set-vol">MASTER VOLUME</label><span id="set-vol-v"></span><input type="range" id="set-vol" min="0" max="1" step="0.05"></div>
     </div>
@@ -579,9 +608,25 @@ const CONFIG = {
     roomSize: 210,          // width/depth of the bedroom
     roomHeight: 92,
     gravity: 120,
-    fogColor: 0xd7e8f7,
-    fogNear: 130,
-    fogFar: 340,
+    fogColor: 0x141c2e,     // night-blue depth haze
+    fogNear: 100,
+    fogFar: 300,
+  },
+  // Cozy-night lighting rig. Quality (settings): 0 = low (no shadows, no
+  // dynamic lights), 1 = medium (soft 1024 shadows + muzzle light),
+  // 2 = high (2048 shadows + explosion flashes).
+  lighting: {
+    exposure: 1.15,         // ACES tone-mapping exposure
+    hemiSky: 0x55688f,      // cool night bounce from above
+    hemiGround: 0x4a3628,   // warm carpet bounce from below
+    hemiIntensity: 0.9,     // strong fill = soft, readable shadows (not pitch black)
+    moonColor: 0xbcd0ff,    // directional moonlight through the window
+    moonIntensity: 1.0,
+    lampColor: 0xffc078,    // warm ceiling-lamp pool in the room's center
+    lampIntensity: 1.4,
+    lampRange: 200,
+    muzzleColor: 0x9dff3a,
+    flashColor: 0xff9a4d,   // explosion flash
   },
   player: {
     maxHp: 100,
@@ -596,7 +641,7 @@ const CONFIG = {
     eyeHeight: 1.15,        // eye offset from body center
     hitRadius: 2.0,         // radius for enemy projectiles / melee
   },
-  weapon: {                 // Foam Bolt Cannon
+  weapon: {                 // Foam Bolt Cannon (baseline weapon; see WEAPON_DEFS)
     damage: 16,
     magSize: 20,
     reserveStart: 140,
@@ -632,7 +677,7 @@ const CONFIG = {
   },
   pickups: {
     dropChance: 0.45,
-    weights: { health: 0.3, ammo: 0.45, speed: 0.25 },  // must sum to 1
+    weights: { health: 0.26, ammo: 0.36, speed: 0.2, weapon: 0.18 },  // must sum to 1
     healthAmount: 25,
     ammoAmount: 36,
     magnetRange: 12,
@@ -681,13 +726,46 @@ const CONFIG = {
 // Upgrade pool shown after each wave (3 random picks).
 const UPGRADES = [
   { name: '+20 MAX HULL',       desc: 'Max health +20 and full repair',      apply: g => { g.player.maxHp += 20; g.player.hp = g.player.maxHp; } },
-  { name: 'FAST RELOAD',        desc: 'Reload time -20%',                    apply: g => { g.player.weapon.reloadTime *= 0.8; } },
-  { name: 'BIG MAGAZINE',       desc: 'Magazine size +8',                    apply: g => { g.player.weapon.magSize += 8; g.player.weapon.ammo += 8; } },
-  { name: 'HEAVY BOLTS',        desc: 'Projectile damage +6',                apply: g => { g.player.weapon.damage += 6; } },
+  { name: 'FAST RELOAD',        desc: 'Foam cannon reload -20%',             apply: g => { g.player.foamWeapon.reloadTime *= 0.8; } },
+  { name: 'BIG MAGAZINE',       desc: 'Foam cannon magazine +8',             apply: g => { g.player.foamWeapon.magSize += 8; g.player.foamWeapon.ammo += 8; } },
+  { name: 'HEAVY BOLTS',        desc: 'Foam cannon damage +6',               apply: g => { g.player.foamWeapon.damage += 6; } },
   { name: 'SERVO LEGS',         desc: 'Move speed +15%',                     apply: g => { g.player.moveSpeed *= 1.15; } },
   { name: 'DASH COILS',         desc: 'Dash cooldown -25%',                  apply: g => { g.player.dashCooldown *= 0.75; } },
   { name: 'MAGNET AMP',         desc: 'Pulse radius & force +25%',           apply: g => { g.player.pulse.radius *= 1.25; g.player.pulse.force *= 1.25; } },
 ];
+
+// Weapon roster. 'foam' is the infinite baseline; the rest drop as pickups
+// with limited ammo and revert to foam when dry. Each has its own model
+// builder, projectile look, sound, and behavior (pellets/pierce/explosive).
+const WEAPON_DEFS = {
+  foam: {
+    name: 'FOAM BOLT CANNON', builder: 'buildFoamCannon', infinite: true,
+    damage: CONFIG.weapon.damage, magSize: CONFIG.weapon.magSize,
+    fireInterval: CONFIG.weapon.fireInterval, reloadTime: CONFIG.weapon.reloadTime,
+    projSpeed: CONFIG.weapon.projectileSpeed, pellets: 1, spread: 0, recoil: 1,
+    projColor: 0x9dff3a, visual: 'bolt', sound: 'shoot',
+  },
+  scatter: {
+    name: 'RUBBER-BAND SCATTERGUN', builder: 'buildScattergun', pickupAmmo: 18,
+    damage: 9, magSize: 6, fireInterval: 0.75, reloadTime: 1.2, projSpeed: 240,
+    pellets: 7, spread: 0.14, recoil: 1.8, knockback: 18, maxLife: 0.6,
+    projColor: 0xffb063, visual: 'pellet', sound: 'shotgun',
+  },
+  dart: {
+    name: 'SUCTION DART RIFLE', builder: 'buildDartRifle', pickupAmmo: 12,
+    damage: 60, magSize: 4, fireInterval: 1.0, reloadTime: 1.3, projSpeed: 420,
+    pellets: 1, spread: 0, recoil: 1.5, pierce: 3,
+    projColor: 0xff4d4d, visual: 'dart', sound: 'dart',
+  },
+  marble: {
+    name: 'MARBLE BOMBER', builder: 'buildMarbleBomber', pickupAmmo: 9,
+    damage: 15, magSize: 3, fireInterval: 0.9, reloadTime: 1.4, projSpeed: 110,
+    pellets: 1, spread: 0.02, recoil: 1.4, projGravity: 70, bounces: 1, maxLife: 3,
+    explode: { radius: 16, damage: 45 },
+    projColor: 0x9fd8ff, visual: 'marble', sound: 'thump',
+  },
+};
+const WEAPON_DROPS = ['scatter', 'dart', 'marble'];
 
 /* =====================================================================
  *  UTILS
@@ -701,9 +779,9 @@ const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 // Touch device? Drives virtual controls + compact HUD layout.
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
-// User settings (persisted to localStorage). Shadows default off on touch for perf.
+// User settings (persisted to localStorage). Lighting quality: 0 low / 1 medium / 2 high.
 const SETTINGS_KEY = 'mmfps-settings';
-const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, shadows: !IS_TOUCH, invertY: false };
+const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, lightQuality: IS_TOUCH ? 1 : 2, invertY: false };
 
 /* =====================================================================
  *  AUDIO MANAGER — all sounds synthesized with Web Audio.
@@ -774,6 +852,12 @@ class AudioManager {
   pickup()    { this.tone('square', 520, 1040, 0.12, 0.3); this.tone('square', 780, 1560, 0.12, 0.2, 0.08); }
   waveStart() { this.tone('square', 220, 220, 0.12, 0.3); this.tone('square', 330, 330, 0.12, 0.3, 0.14); this.tone('square', 440, 440, 0.2, 0.35, 0.28); }
   combo(mult) { this.tone('square', 300 + mult * 120, 520 + mult * 120, 0.12, 0.3); }
+  tick()      { this.tone('square', 660, 660, 0.09, 0.3); }
+  go()        { this.tone('square', 880, 1320, 0.25, 0.35); this.tone('square', 660, 990, 0.25, 0.25, 0.03); }
+  upgradeOpen(){ this.tone('square', 520, 780, 0.15, 0.25); this.tone('square', 660, 990, 0.18, 0.22, 0.1); }
+  shotgun()   { this.noise(0.18, 0.6, 1200); this.tone('square', 220, 60, 0.18, 0.4); }
+  dart()      { this.noise(0.1, 0.3, 4000, 'highpass'); this.tone('square', 900, 200, 0.1, 0.3); }
+  thump()     { this.tone('sine', 160, 50, 0.25, 0.5); this.noise(0.12, 0.3, 600); }
   win()       { [440, 550, 660, 880].forEach((f, i) => this.tone('square', f, f, 0.22, 0.3, i * 0.16)); }
   lose()      { [330, 262, 196, 131].forEach((f, i) => this.tone('sawtooth', f, f * 0.9, 0.3, 0.3, i * 0.2)); }
   click()     { this.tone('square', 700, 500, 0.05, 0.2); }
@@ -791,10 +875,11 @@ class UIManager {
       hpText: $('ui-hp-text'), hpFill: $('hp-fill'),
       ammoCount: $('ammo-count'), ammoReserve: $('ammo-reserve'),
       reloadHint: $('reload-hint'), pulseStatus: $('pulse-status'), dashStatus: $('dash-status'),
-      boostStatus: $('boost-status'),
+      boostStatus: $('boost-status'), weaponName: $('weapon-name'),
       banner: $('wave-banner'), damageFlash: $('damage-flash'), hitmarker: $('hitmarker'),
       comboDisplay: $('combo-display'), comboMult: $('combo-mult'),
       comboBarFill: $('combo-bar').firstElementChild, announcer: $('announcer'),
+      countdown: $('countdown'),
       dmgLayer: $('dmg-layer'),
       upgradePanel: $('upgrade-panel'), upgradeOptions: $('upgrade-options'),
       startScreen: $('start-screen'), pauseScreen: $('pause-screen'),
@@ -865,6 +950,7 @@ class UIManager {
     this.el.hpFill.style.width = `${clamp(p.hp / p.maxHp * 100, 0, 100)}%`;
     this.el.ammoCount.textContent = w.ammo;
     this.el.ammoReserve.textContent = `/ ${w.reserve}`;
+    this.el.weaponName.textContent = w.def.name;
     this.el.reloadHint.textContent = w.reloading ? 'RELOADING…' : (w.ammo === 0 ? 'PRESS R TO RELOAD' : '');
 
     const pulseReady = p.pulseTimer <= 0;
@@ -907,6 +993,17 @@ class UIManager {
     }
 
     this.updateEdgeArrows();
+  }
+
+  // Big center-screen countdown step ("3" … "GO!").
+  countdown(text) {
+    const c = this.el.countdown;
+    c.textContent = text;
+    c.classList.remove('show');
+    void c.offsetWidth;
+    c.classList.add('show');
+    clearTimeout(this._cdT);
+    this._cdT = setTimeout(() => c.classList.remove('show'), text === 'GO!' ? 700 : 950);
   }
 
   // Big center-screen kill-streak callout ("DOUBLE KILL", …).
@@ -961,12 +1058,13 @@ class UIManager {
 
   showUpgrades(options, onChoose) {
     this.el.upgradeOptions.innerHTML = '';
-    for (const up of options) {
+    options.forEach((up, i) => {
       const btn = document.createElement('button');
       btn.innerHTML = `${up.name}<small>${up.desc}</small>`;
+      btn.style.animationDelay = `${0.18 + i * 0.13}s`;  // staggered card pop-in
       btn.onclick = () => { onChoose(up); };
       this.el.upgradeOptions.appendChild(btn);
-    }
+    });
     this.el.upgradePanel.classList.remove('hidden');
   }
 
@@ -1185,8 +1283,8 @@ class ProceduralAssetFactory {
     // Ceiling (solid — stops hover escapes over the walls).
     this.box(S, 2, S, P.ceiling, 0, H + 1, 0, { shadow: false });
 
-    // Window (flat, glowing) + frame on the north wall.
-    this.box(50, 40, 0.8, 0xfff6d8, -40, 52, -half + 1.6, { collider: false, shadow: false, emissive: 0xfff2c0 });
+    // Window (flat, moonlit glow) + frame on the north wall.
+    this.box(50, 40, 0.8, 0xdce8ff, -40, 52, -half + 1.6, { collider: false, shadow: false, emissive: 0x9db8e8 });
     this.box(54, 3, 1.4, 0xffffff, -40, 73, -half + 1.8, { collider: false });
     this.box(54, 3, 1.4, 0xffffff, -40, 31, -half + 1.8, { collider: false });
     this.box(3, 44, 1.4, 0xffffff, -40, 52, -half + 1.8, { collider: false });
@@ -1322,6 +1420,32 @@ class ProceduralAssetFactory {
     this.cylinder(8, 8, 1.4, 0xf1faee, half - 2.6, 62, -30, { rz: Math.PI / 2, seg: 16 });
     this.box(0.8, 6, 0.8, 0x264653, half - 3.5, 64.2, -30, { collider: false });
     this.box(0.8, 0.8, 6.5, 0xe63946, half - 3.5, 62, -26.8, { collider: false });
+
+    // ---- Night dressing: glowing toy lights (all fake/emissive — no real
+    // lights, so they're free on mobile).
+    const bulbColors = [0xff6b6b, 0xffd166, 0x4ecdc4, 0xff5db1, 0x9dff3a];
+    const bulbGeo = new THREE.SphereGeometry(1.0, 8, 6);
+    // Fairy-light string drooping along the bed's headboard.
+    for (let i = 0; i < 7; i++) {
+      const bulb = new THREE.Mesh(bulbGeo, new THREE.MeshBasicMaterial({ color: bulbColors[i % bulbColors.length] }));
+      bulb.position.set(-98, 32 + Math.sin(i / 6 * Math.PI) * 4, -98 + i * 7);
+      this.scene.add(bulb);
+    }
+    // Another string along the lower wall shelf.
+    for (let i = 0; i < 6; i++) {
+      const bulb = new THREE.Mesh(bulbGeo, new THREE.MeshBasicMaterial({ color: bulbColors[(i + 2) % bulbColors.length] }));
+      bulb.position.set(18 + i * 9, 58 - Math.abs(Math.sin(i / 5 * Math.PI * 2)) * 3, -half + 12);
+      this.scene.add(bulb);
+    }
+    // Plug-in nightlight by the door (warm wedge + glow dot).
+    this.box(4, 5, 1.2, 0xfff1d6, half - 3, 4.5, 54, { collider: false, emissive: 0xffc078 });
+    // Glowing star decals on the south wall.
+    for (let i = 0; i < 5; i++) {
+      const star = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 0.4), new THREE.MeshBasicMaterial({ color: 0xbfe08a }));
+      star.position.set(30 + rand(-24, 24), 60 + rand(-14, 14), half - 1.6);
+      star.rotation.z = rand(0, Math.PI);
+      this.scene.add(star);
+    }
   }
 
   /* ------------------ ENEMY BODIES (voxel-style) ------------------ */
@@ -1506,6 +1630,78 @@ class ProceduralAssetFactory {
     group.add(muzzle);
     return { group, muzzle, flash };
   }
+
+  // Shared helpers for first-person weapon builders.
+  fpMesh(group, w, h, d, c, x, y, z) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this.mat(c));
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+    return mesh;
+  }
+
+  fpFlashMuzzle(group, x, y, z, size = 0.5) {
+    const flash = new THREE.Mesh(
+      new THREE.BoxGeometry(size, size, size),
+      new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.95 })
+    );
+    flash.position.set(x, y, z);
+    flash.visible = false;
+    group.add(flash);
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(x, y, z);
+    group.add(muzzle);
+    return { flash, muzzle };
+  }
+
+  // Rubber-Band Scattergun — wide wooden clothespin body, twin stubby barrels.
+  buildScattergun() {
+    const group = new THREE.Group();
+    const m = (...a) => this.fpMesh(group, ...a);
+    m(0.6, 0.5, 1.5, 0xc98a4b, 0, 0, 0.15);            // wooden slab body
+    m(0.72, 0.22, 0.7, 0xa05c2c, 0, 0.34, 0.25);       // clothespin clamp
+    m(0.5, 0.16, 0.5, 0xffd166, 0, -0.2, 0.75);        // spring plate
+    m(0.26, 0.26, 1.5, 0x8a5a30, -0.17, 0.1, -1.05);   // left barrel
+    m(0.26, 0.26, 1.5, 0x8a5a30, 0.17, 0.1, -1.05);    // right barrel
+    m(0.68, 0.09, 0.09, 0xef476f, 0, 0.14, -0.65);     // stretched rubber bands
+    m(0.68, 0.09, 0.09, 0xef476f, 0, 0.02, -1.35);
+    m(0.3, 0.5, 0.4, 0x50414b, 0, -0.45, 0.55);        // grip
+    const { flash, muzzle } = this.fpFlashMuzzle(group, 0, 0.1, -1.95, 0.65);
+    return { group, muzzle, flash };
+  }
+
+  // Suction Dart Rifle — long thin barrel, scope, red dart with a cup tip.
+  buildDartRifle() {
+    const group = new THREE.Group();
+    const m = (...a) => this.fpMesh(group, ...a);
+    m(0.4, 0.45, 1.9, 0x2f6f8f, 0, 0, 0.2);            // teal body
+    m(0.2, 0.2, 2.3, 0x1d4d66, 0, 0.1, -1.75);         // long barrel
+    m(0.5, 0.28, 0.7, 0x50414b, 0, 0.44, 0.3);         // scope block
+    m(0.16, 0.16, 0.6, 0x9fd8ff, 0, 0.44, -0.25);      // scope lens tube
+    m(0.3, 0.5, 0.4, 0x50414b, 0, -0.45, 0.65);        // grip
+    m(0.2, 0.2, 0.7, 0xff4d4d, 0, 0.1, -2.75);         // loaded dart shaft
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.14, 0.16, 8), this.mat(0xff8080));
+    cup.rotation.x = Math.PI / 2;
+    cup.position.set(0, 0.1, -3.15);
+    group.add(cup);
+    const { flash, muzzle } = this.fpFlashMuzzle(group, 0, 0.1, -3.0, 0.4);
+    return { group, muzzle, flash };
+  }
+
+  // Marble Bomber — chunky mortar with a flared muzzle and a visible marble.
+  buildMarbleBomber() {
+    const group = new THREE.Group();
+    const m = (...a) => this.fpMesh(group, ...a);
+    m(0.7, 0.7, 1.2, 0x555a66, 0, 0, 0.25);            // chunky body
+    m(0.56, 0.56, 0.9, 0x777d8a, 0, 0.05, -0.85);      // barrel
+    m(0.74, 0.74, 0.3, 0x8a91a0, 0, 0.05, -1.35);      // flared tip
+    m(0.5, 0.22, 0.5, 0xffd166, 0, 0.48, 0.4);         // top hopper
+    m(0.3, 0.5, 0.4, 0x50414b, 0, -0.5, 0.6);          // grip
+    const marble = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), new THREE.MeshBasicMaterial({ color: 0x9fd8ff }));
+    marble.position.set(0, 0.5, 0.05);                 // next round, visible in the hopper
+    group.add(marble);
+    const { flash, muzzle } = this.fpFlashMuzzle(group, 0, 0.05, -1.55, 0.55);
+    return { group, muzzle, flash };
+  }
 }
 
 /* =====================================================================
@@ -1565,9 +1761,22 @@ class Projectile {
     this.color = opts.color;
     this.trailTimer = 0;
     this.dead = false;
+    // Per-weapon behaviors.
+    this.pierce = opts.pierce ?? 0;
+    this.bounces = opts.bounces ?? 0;
+    this.explodeOpts = opts.explode ?? null;
+    this.knockbackAmt = opts.knockback ?? 0;
+    this.hitEnemies = null;
 
-    const size = this.fromPlayer ? 0.7 : 1.0;
-    const geo = this.fromPlayer ? new THREE.BoxGeometry(size, size, size * 2.2) : new THREE.SphereGeometry(size, 8, 6);
+    // Per-weapon projectile shapes.
+    let geo;
+    if (!this.fromPlayer) geo = new THREE.SphereGeometry(1.0, 8, 6);
+    else switch (opts.visual) {
+      case 'pellet': geo = new THREE.BoxGeometry(0.45, 0.45, 0.45); break;
+      case 'dart':   geo = new THREE.BoxGeometry(0.35, 0.35, 1.8); break;
+      case 'marble': geo = new THREE.SphereGeometry(0.8, 10, 8); break;
+      default:       geo = new THREE.BoxGeometry(0.7, 0.7, 1.55);      // foam bolt
+    }
     this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: opts.color }));
     this.mesh.position.copy(this.pos);
     this.mesh.lookAt(this.pos.clone().add(dir));
@@ -1590,15 +1799,33 @@ class Projectile {
       this.game.particles.burst(this.pos, this.color, 1, { speed: 2, size: CONFIG.feel.trailSize, life: 0.32, gravity: 0, spread: 0.4 });
     }
 
-    // World collision.
-    if (this.pos.y < 0.2 || pointInWorld(this.game.colliders, this.pos)) return this.kill(true);
+    // World collision (marbles bounce off the floor once).
+    if (this.pos.y < 0.2 && this.vel.y < 0 && this.bounces > 0) {
+      this.bounces--;
+      this.pos.y = 0.3;
+      this.vel.y *= -0.6;
+      this.vel.x *= 0.85; this.vel.z *= 0.85;
+      this.game.audio.tone('sine', 320, 200, 0.08, 0.2);
+    } else if (this.pos.y < 0.2 || pointInWorld(this.game.colliders, this.pos)) {
+      return this.kill(true);
+    }
 
     if (this.fromPlayer) {
       for (const e of this.game.enemies) {
         if (!e.alive) continue;
+        if (this.hitEnemies?.has(e)) continue;                // darts hit each enemy once
         if (this.pos.distanceTo(e.center()) < e.hitRadius + this.radius) {
           this.game.stats.hits++;
           e.takeDamage(this.damage, this.pos);
+          if (this.knockbackAmt && e.alive) {
+            e.knockback.add(this.vel.clone().setY(0).normalize().multiplyScalar(this.knockbackAmt));
+          }
+          if (this.pierce > 0) {                              // punch through and keep flying
+            this.pierce--;
+            (this.hitEnemies ??= new Set()).add(e);
+            this.game.particles.burst(this.pos, this.color, 4, { speed: 10, size: 0.35, life: 0.25 });
+            continue;
+          }
           return this.kill(true);
         }
       }
@@ -1616,7 +1843,9 @@ class Projectile {
   kill(impact) {
     if (this.dead) return;
     this.dead = true;
-    if (impact) {
+    if (this.explodeOpts) {
+      this.game.explodeAt(this.pos, this.explodeOpts.radius, this.explodeOpts.damage);
+    } else if (impact) {
       this.game.particles.burst(this.pos, this.color, 8, { speed: 18, size: 0.5, life: 0.4, gravity: 30 });
       this.game.particles.burst(this.pos, 0xffffff, 3, { speed: 26, size: 0.3, life: 0.2, gravity: 0 });
     }
@@ -1630,13 +1859,16 @@ class Projectile {
  *  PICKUP — health / ammo cubes dropped by enemies.
  * ===================================================================== */
 class Pickup {
-  constructor(game, pos, type) {
+  constructor(game, pos, type, weaponKey = null) {
     this.game = game;
-    this.type = type;                                  // 'health' | 'ammo' | 'speed'
+    this.type = type;                                  // 'health' | 'ammo' | 'speed' | 'weapon'
+    this.weaponKey = weaponKey;
     this.pos = pos.clone(); this.pos.y = 2.2;
     this.life = 0;
     this.dead = false;
-    const color = { health: CONFIG.palette.healthPickup, ammo: CONFIG.palette.ammoPickup, speed: 0xffd166 }[type];
+    const color = type === 'weapon'
+      ? WEAPON_DEFS[weaponKey].projColor
+      : { health: CONFIG.palette.healthPickup, ammo: CONFIG.palette.ammoPickup, speed: 0xffd166 }[type];
     this.mesh = new THREE.Mesh(
       new THREE.BoxGeometry(1.8, 1.8, 1.8),
       new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.55 })
@@ -1653,13 +1885,21 @@ class Pickup {
       const tip = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), detailMat);
       tip.position.y = 1.2;
       this.mesh.add(band, tip);
-    } else {
+    } else if (type === 'speed') {
       const detailMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       const c1 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.5), detailMat);
       const c2 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.5), detailMat);
       c1.rotation.z = 0.7;  c1.position.set(-0.3, 0.4, 1.0);
       c2.rotation.z = -0.7; c2.position.set(-0.3, -0.4, 1.0);
       this.mesh.add(c1, c2);                           // ">" chevron on the face
+    } else {
+      // Weapon crate: dark gun silhouette (barrel + grip) floating above.
+      const gunMat = new THREE.MeshBasicMaterial({ color: 0x1d2530 });
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.6, 0.6), gunMat);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 0.55), gunMat);
+      barrel.position.set(0, 1.6, 0);
+      grip.position.set(-0.7, 0.9, 0);
+      this.mesh.add(barrel, grip);
     }
     this.mesh.castShadow = true;
     this.mesh.position.copy(this.pos);
@@ -1682,10 +1922,13 @@ class Pickup {
 
     if (d < C.collectRange) {
       if (this.type === 'health') p.hp = Math.min(p.maxHp, p.hp + C.healthAmount);
-      else if (this.type === 'ammo') p.weapon.reserve += C.ammoAmount;
-      else {
+      else if (this.type === 'ammo') p.foamWeapon.reserve += C.ammoAmount;
+      else if (this.type === 'speed') {
         p.speedBoostT = CONFIG.player.speedBoostTime;
         this.game.ui.banner('<small>⚡ SPEED BOOST ⚡</small>', 0.9);
+      } else {
+        p.equip(this.weaponKey);
+        this.game.ui.banner(`<small>${WEAPON_DEFS[this.weaponKey].name}!</small>`, 1.4);
       }
       this.game.stats.pickups++;
       this.game.audio.pickup();
@@ -1786,6 +2029,11 @@ class Enemy {
     // Double burst: chunky fireball + fast white sparks.
     this.game.particles.burst(this.center(), 0xff8c42, 20, { speed: 30, size: 0.8, life: 0.7 });
     this.game.particles.burst(this.center(), 0xffe066, 12, { speed: 44, size: 0.45, life: 0.45 });
+    if (this.game.flashLightOn) {
+      this.game.flashLight.color.setHex(CONFIG.lighting.flashColor);
+      this.game.flashLight.position.copy(this.center()).y += 2;
+      this.game.flashLight.intensity = 5;
+    }
     if (this.distToPlayer() < 45) this.game.addShake(0.3);   // nearby kills thump
     this.game.spawnDebris(this.group);                 // voxel parts pop apart
     this.destroy();
@@ -2033,57 +2281,81 @@ class TurretToy extends Enemy {
  *  WEAPONS
  * ===================================================================== */
 class Weapon {
-  // Foam Bolt Cannon — hitscan-feel fast projectiles, magazine + reload.
-  constructor(game) {
+  // Generic player weapon driven by a WEAPON_DEFS entry. Models are built
+  // once per weapon type and reused across pickups.
+  constructor(game, key) {
     this.game = game;
-    const C = CONFIG.weapon;
-    this.damage = C.damage;
-    this.magSize = C.magSize;
-    this.ammo = C.magSize;
-    this.reserve = C.reserveStart;
-    this.fireInterval = C.fireInterval;
-    this.reloadTime = C.reloadTime;
+    this.key = key;
+    const def = WEAPON_DEFS[key];
+    this.def = def;
+    this.damage = def.damage;
+    this.magSize = def.magSize;
+    this.ammo = def.magSize;
+    this.reserve = def.infinite ? CONFIG.weapon.reserveStart : def.pickupAmmo;
+    this.fireInterval = def.fireInterval;
+    this.reloadTime = def.reloadTime;
     this.fireTimer = 0;
     this.reloading = false;
     this.reloadT = 0;
     this.recoil = 0;
     this.flashTimer = 0;
 
-    const built = game.factory.buildFoamCannon();
+    game.weaponModels ??= {};
+    const built = (game.weaponModels[key] ??= game.factory[def.builder]());
     this.model = built.group;
     this.muzzle = built.muzzle;
     this.flash = built.flash;
     this.basePos = new THREE.Vector3(0.85, -0.75, -1.5);
     this.model.position.copy(this.basePos);
-    game.camera.add(this.model);
   }
 
   tryFire() {
     if (this.reloading || this.fireTimer > 0) return;
     if (this.ammo <= 0) { this.startReload(); return; }
+    const def = this.def;
     this.ammo--;
-    this.game.stats.shots++;
+    this.game.stats.shots += def.pellets;
     this.fireTimer = this.fireInterval;
-    this.recoil = 1;
+    this.recoil = def.recoil;
     this.flashTimer = 0.05;
     this.flash.visible = true;
     this.flash.scale.setScalar(rand(0.9, 1.8));
 
-    // Spawn projectile from the muzzle, toward the camera's aim direction.
+    // Aim convergence: shoot toward a far point along the camera's center ray.
     const muzzlePos = V3();
     this.muzzle.getWorldPosition(muzzlePos);
-    const dir = V3();
-    this.game.camera.getWorldDirection(dir);
-    // Aim convergence: shoot toward a far point along the camera's center ray.
-    const target = this.game.camera.getWorldPosition(V3()).addScaledVector(dir, 200);
-    const shotDir = target.sub(muzzlePos).normalize();
-    this.game.projectiles.push(new Projectile(this.game, muzzlePos, shotDir, {
-      speed: CONFIG.weapon.projectileSpeed, damage: this.damage,
-      color: CONFIG.palette.playerBolt, fromPlayer: true, radius: 0.7, maxLife: 2.5,
-    }));
+    const camDir = V3();
+    this.game.camera.getWorldDirection(camDir);
+    const target = this.game.camera.getWorldPosition(V3()).addScaledVector(camDir, 200);
+    const baseDir = target.sub(muzzlePos).normalize();
 
-    this.game.audio.shoot();
-    this.game.addShake(CONFIG.feel.shakeFire);
+    for (let i = 0; i < def.pellets; i++) {
+      const dir = baseDir.clone();
+      if (def.spread) {
+        dir.x += rand(-def.spread, def.spread);
+        dir.y += rand(-def.spread, def.spread);
+        dir.z += rand(-def.spread, def.spread);
+        dir.normalize();
+      }
+      this.game.projectiles.push(new Projectile(this.game, muzzlePos, dir, {
+        speed: def.projSpeed * (def.pellets > 1 ? rand(0.85, 1.1) : 1),
+        damage: this.damage,
+        color: def.projColor, visual: def.visual, fromPlayer: true,
+        radius: 0.7, maxLife: def.maxLife ?? 2.5,
+        pierce: def.pierce, gravity: def.projGravity ?? 0,
+        bounces: def.bounces ?? 0, explode: def.explode, knockback: def.knockback,
+      }));
+    }
+
+    // Muzzle flash light (reused singleton; gated by lighting quality).
+    if (this.game.muzzleLightOn) {
+      this.game.muzzleLight.color.setHex(def.projColor);
+      this.game.muzzleLight.position.copy(muzzlePos);
+      this.game.muzzleLight.intensity = 3;
+    }
+
+    this.game.audio[def.sound]();
+    this.game.addShake(CONFIG.feel.shakeFire * (def.recoil * 0.6 + 0.4));
     if (this.ammo === 0) this.startReload();
   }
 
@@ -2170,6 +2442,11 @@ class MagnetPulse {
       this.rings.push({ mesh: ring, t: -delay });
     }
     g.particles.burst(p.position.clone(), 0x38e6ff, 14, { speed: 20, size: 0.5, life: 0.4, gravity: 6 });
+    if (g.flashLightOn) {
+      g.flashLight.color.setHex(0x38e6ff);
+      g.flashLight.position.copy(p.position).y += 2;
+      g.flashLight.intensity = 4;
+    }
   }
 
   update(dt) {
@@ -2219,13 +2496,27 @@ class Player {
     this.speedBoostT = 0;                              // temporary speed-pickup timer
     this.dead = false;
 
-    this.weapon = new Weapon(game);
+    // Foam Bolt Cannon is the permanent baseline; pickups swap in on top
+    // of it and revert here when their ammo runs out.
+    this.foamWeapon = new Weapon(game, 'foam');
+    this.weapon = null;
+    this.equip('foam');
     this.pulse = new MagnetPulse(game);
     this.pulse.radius = CONFIG.pulse.radius;
     this.pulse.force = CONFIG.pulse.force;
   }
 
   eyePos() { return this.position.clone().add(V3(0, CONFIG.player.eyeHeight, 0)); }
+
+  // Swap the held weapon (models are cached; foam keeps its ammo state).
+  equip(key) {
+    const cam = this.game.camera;
+    if (this.weapon) cam.remove(this.weapon.model);
+    this.weapon = key === 'foam' ? this.foamWeapon : new Weapon(this.game, key);
+    this.weapon.reloading = false;
+    this.weapon.model.rotation.set(0, 0, 0);
+    cam.add(this.weapon.model);
+  }
 
   // Merged movement intent from keyboard and touch joystick (pre-yaw, analog).
   getMoveInput() {
@@ -2346,6 +2637,13 @@ class Player {
     if (input.mouseL) this.weapon.tryFire();
     this.weapon.update(dt);
     this.pulse.update(dt);
+
+    // Pickup weapon ran dry → back to the trusty foam cannon.
+    const w = this.weapon;
+    if (w !== this.foamWeapon && w.ammo === 0 && w.reserve === 0 && !w.reloading) {
+      this.equip('foam');
+      this.game.ui.banner('<small>FOAM BOLT CANNON READY</small>', 1.2);
+    }
   }
 }
 
@@ -2494,8 +2792,13 @@ class WaveManager {
     if (this.queued === 0 && g.enemies.length === 0 && g.portals.length === 0) {
       this.active = false;
       g.score += W.clearBonus(this.wave);
-      if (this.wave >= W.winWave && !g.endless) g.gameOver(true);
-      else g.showUpgradeChoice();
+      if (this.wave >= W.winWave && !g.endless) {
+        g.gameOver(true);
+      } else {
+        // Celebrate first (slow-mo + callout), then present the upgrades.
+        g.ui.announce('WAVE CLEAR!');
+        g.upgradeDelayT = 1.15;
+      }
     }
   }
 
@@ -2550,6 +2853,9 @@ class Game {
     this.endless = false;
     this.timeScale = 1;                                // eases toward 0.3 during slow-mo
     this.slowmoT = 0;
+    this.countdownT = 0;                               // pre-run 3-2-1-GO timer
+    this.countdownStep = null;
+    this.upgradeDelayT = 0;                            // pause between wave clear and upgrade panel
     this.shake = 0;
     this.fovKick = 0;
     this.pendingWave = 0;
@@ -2592,7 +2898,9 @@ class Game {
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = CONFIG.lighting.exposure;
     document.body.appendChild(this.renderer.domElement);
     addEventListener('resize', () => {
       this.camera.aspect = innerWidth / innerHeight;
@@ -2612,19 +2920,34 @@ class Game {
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);                       // so the FP weapon renders
 
-    // Warm sun through the window + soft sky fill.
-    const hemi = new THREE.HemisphereLight(0xbde0fe, 0xa9713f, 0.85);
+    // Night rig: cool ambient bounce + moonlight from the window + one warm
+    // lamp pool. Muzzle/explosion lights are reusable singletons so the
+    // scene never exceeds three point lights.
+    const L = CONFIG.lighting;
+    const hemi = new THREE.HemisphereLight(L.hemiSky, L.hemiGround, L.hemiIntensity);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xfff2d8, 1.6);
-    sun.position.set(-60, 80, -40);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    this.hemi = hemi;
+
+    const moon = new THREE.DirectionalLight(L.moonColor, L.moonIntensity);
+    moon.position.set(-60, 80, -40);                   // through the window
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(2048, 2048);
     const half = W.roomSize / 2 + 10;
-    sun.shadow.camera.left = -half; sun.shadow.camera.right = half;
-    sun.shadow.camera.top = half; sun.shadow.camera.bottom = -half;
-    sun.shadow.camera.far = 300;
-    this.scene.add(sun);
-    this.sun = sun;
+    moon.shadow.camera.left = -half; moon.shadow.camera.right = half;
+    moon.shadow.camera.top = half; moon.shadow.camera.bottom = -half;
+    moon.shadow.camera.far = 300;
+    moon.shadow.bias = -0.0004;
+    this.scene.add(moon);
+    this.sun = moon;                                   // kept name: quality toggles use it
+
+    this.lampLight = new THREE.PointLight(L.lampColor, L.lampIntensity, L.lampRange, 1.6);
+    this.lampLight.position.set(0, W.roomHeight - 26, 0);
+    this.scene.add(this.lampLight);
+
+    this.muzzleLight = new THREE.PointLight(L.muzzleColor, 0, 45, 1.8);
+    this.scene.add(this.muzzleLight);
+    this.flashLight = new THREE.PointLight(L.flashColor, 0, 70, 1.8);
+    this.scene.add(this.flashLight);
   }
 
   /* ---------------- persistence: best run ---------------- */
@@ -2659,11 +2982,26 @@ class Game {
     const s = this.settings;
     this.baseFov = s.fov;
     this.audio.setVolume(s.volume);
-    if (this.renderer.shadowMap.enabled !== s.shadows) {
-      this.renderer.shadowMap.enabled = s.shadows;
-      this.sun.castShadow = s.shadows;
+
+    // Lighting quality: 0 low / 1 medium / 2 high.
+    const q = Math.round(s.lightQuality);
+    const wantShadows = q >= 1;
+    if (this.renderer.shadowMap.enabled !== wantShadows) {
+      this.renderer.shadowMap.enabled = wantShadows;
+      this.sun.castShadow = wantShadows;
       this.scene.traverse(o => { if (o.isMesh) o.material.needsUpdate = true; });
     }
+    const mapSize = q >= 2 ? 2048 : 1024;
+    if (this.sun.shadow.mapSize.width !== mapSize) {
+      this.sun.shadow.mapSize.set(mapSize, mapSize);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.muzzleLightOn = q >= 1;
+    this.flashLightOn = q >= 2;
+    this.lampLight.visible = q >= 1;
+    // Low quality loses the lamp pool — compensate with brighter ambience.
+    this.hemi.intensity = q === 0 ? CONFIG.lighting.hemiIntensity + 0.3 : CONFIG.lighting.hemiIntensity;
   }
 
   initSettingsUI() {
@@ -2684,12 +3022,12 @@ class Game {
     bindSlider('set-shake', 'shake', v => `${Math.round(v * 100)}%`);
     bindSlider('set-vol', 'volume', v => `${Math.round(v * 100)}%`);
     bindSlider('set-fov', 'fov', v => `${Math.round(v)}°`);
+    bindSlider('set-light', 'lightQuality', v => ['LOW', 'MED', 'HIGH'][Math.round(v)]);
     const bindCheck = (id, key) => {
       const input = $(id);
       input.checked = s[key];
       input.addEventListener('change', () => { s[key] = input.checked; this.applySettings(); this.saveSettings(); });
     };
-    bindCheck('set-shadows', 'shadows');
     bindCheck('set-inverty', 'invertY');
 
     $('btn-settings-start').onclick = () => { this.audio.init(); this.audio.click(); this.openSettings('start-screen'); };
@@ -2890,7 +3228,9 @@ class Game {
       const fs = document.documentElement.requestFullscreen?.() ?? Promise.reject();
       fs.then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
     }
-    this.waveManager.startWave(1);
+    // 3 / 2 / 1 / GO! — wave 1 starts when it hits zero (see frame()).
+    this.countdownT = 3.6;
+    this.countdownStep = null;
   }
 
   resumePlay() {
@@ -2900,7 +3240,9 @@ class Game {
 
   showUpgradeChoice() {
     this.state = 'upgrading';
+    this.upgradeDelayT = 0;                            // clear any pending reveal
     this.input.mouseL = false;
+    this.audio.upgradeOpen();
     document.exitPointerLock?.();                      // absent on some mobile browsers
     // Pick 3 distinct upgrades.
     const pool = [...UPGRADES];
@@ -2961,12 +3303,37 @@ class Game {
     // Occasional pickup drop.
     if (Math.random() < CONFIG.pickups.dropChance) {
       const w = CONFIG.pickups.weights, r = Math.random();
-      const type = r < w.health ? 'health' : r < w.health + w.ammo ? 'ammo' : 'speed';
-      this.pickups.push(new Pickup(this, enemy.position, type));
+      let type, weaponKey = null;
+      if (r < w.health) type = 'health';
+      else if (r < w.health + w.ammo) type = 'ammo';
+      else if (r < w.health + w.ammo + w.speed) type = 'speed';
+      else { type = 'weapon'; weaponKey = pick(WEAPON_DROPS); }
+      this.pickups.push(new Pickup(this, enemy.position, type, weaponKey));
     }
   }
 
   addShake(amount) { this.shake = Math.min(1.2, this.shake + amount * this.settings.shake); }
+
+  // Area explosion (marble bomber, future explosives): damage with falloff,
+  // chunky particles, and a flash light. Never hurts the player.
+  explodeAt(pos, radius, damage) {
+    this.audio.explosion();
+    this.addShake(0.5);
+    this.particles.burst(pos, 0xffb066, 22, { speed: 34, size: 0.8, life: 0.6 });
+    this.particles.burst(pos, 0xffffff, 10, { speed: 48, size: 0.4, life: 0.35 });
+    if (this.flashLightOn) {
+      this.flashLight.color.setHex(0xffb066);
+      this.flashLight.position.copy(pos);
+      this.flashLight.intensity = 6;
+    }
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const d = e.center().distanceTo(pos);
+      if (d < radius + e.hitRadius) {
+        e.takeDamage(damage * (1 - 0.5 * clamp(d / radius, 0, 1)), e.center());
+      }
+    }
+  }
 
   // Keep bodies from interpenetrating: horizontal circle-vs-circle separation
   // between enemies, and between each enemy and the player.
@@ -3097,10 +3464,28 @@ class Game {
     const dt = rawDt * this.timeScale;
 
     if (this.state === 'playing') {
+      // Pre-run countdown: the player can move, but wave 1 waits for GO!.
+      if (this.countdownT > 0) {
+        this.countdownT -= dt;
+        const step = this.countdownT > 2.6 ? '3' : this.countdownT > 1.6 ? '2' : this.countdownT > 0.6 ? '1' : 'GO!';
+        if (step !== this.countdownStep) {
+          this.countdownStep = step;
+          this.ui.countdown(step);
+          step === 'GO!' ? this.audio.go() : this.audio.tick();
+        }
+        if (this.countdownT <= 0) this.waveManager.startWave(1);
+      }
+
       // Combo window drains in game time.
       if (this.combo.kills > 0) {
         this.combo.timer -= dt;
         if (this.combo.timer <= 0) { this.combo.kills = 0; this.combo.mult = 1; }
+      }
+
+      // Wave-clear breather before the upgrade panel appears.
+      if (this.upgradeDelayT > 0) {
+        this.upgradeDelayT -= dt;
+        if (this.upgradeDelayT <= 0) this.showUpgradeChoice();
       }
       // Delayed wave start (after an upgrade was chosen).
       if (this.pendingWave) {
@@ -3138,6 +3523,10 @@ class Game {
       this.updateDebris(dt);
       this.player.pulse.update(dt);
     }
+
+    // Dynamic light flashes decay every frame.
+    this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - rawDt * 34);
+    this.flashLight.intensity = Math.max(0, this.flashLight.intensity - rawDt * 16);
 
     this.ui.update(dt);
     this.renderer.render(this.scene, this.camera);

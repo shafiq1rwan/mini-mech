@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Voxel mech head icon, matches the in-game Toy Bot palette -->
+  <rect width="512" height="512" rx="96" fill="#101018"/>
+  <rect x="96" y="96" width="320" height="320" rx="24" fill="#ff8c42"/>
+  <rect x="128" y="176" width="256" height="72" rx="12" fill="#38e6ff"/>
+  <rect x="152" y="192" width="60" height="40" rx="8" fill="#aef7ff"/>
+  <rect x="232" y="56" width="48" height="56" fill="#50414b"/>
+  <rect x="216" y="24" width="80" height="48" rx="12" fill="#ff5db1"/>
+  <rect x="144" y="300" width="224" height="36" rx="10" fill="#50414b"/>
+  <rect x="160" y="356" width="80" height="28" rx="8" fill="#50414b"/>
+  <rect x="272" y="356" width="80" height="28" rx="8" fill="#50414b"/>
+  <rect x="56" y="176" width="40" height="120" rx="12" fill="#50414b"/>
+  <rect x="416" y="176" width="40" height="120" rx="12" fill="#50414b"/>
+</svg>

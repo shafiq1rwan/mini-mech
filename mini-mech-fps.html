@@ -1,0 +1,2589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101018">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MiniMech">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Mini Mech FPS — Giant Bedroom</title>
+<style>
+  /* ============================== BASE ============================== */
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #101018; }
+  body { font-family: "Courier New", ui-monospace, monospace; user-select: none; }
+  canvas { display: block; }
+  #hud, #hud * { pointer-events: none; }
+
+  /* ============================== COCKPIT FRAME ============================== */
+  #hud { position: fixed; inset: 0; z-index: 10; }
+  .cockpit-vignette {
+    position: absolute; inset: 0;
+    box-shadow: inset 0 0 140px 50px rgba(5, 10, 20, 0.85);
+    border-radius: 24px;
+  }
+  .cockpit-corner {
+    position: absolute; width: 90px; height: 90px;
+    border: 4px solid rgba(120, 220, 255, 0.35);
+  }
+  .cockpit-corner.tl { top: 14px; left: 14px;  border-right: none; border-bottom: none; }
+  .cockpit-corner.tr { top: 14px; right: 14px; border-left: none;  border-bottom: none; }
+  .cockpit-corner.bl { bottom: 14px; left: 14px;  border-right: none; border-top: none; }
+  .cockpit-corner.br { bottom: 14px; right: 14px; border-left: none;  border-top: none; }
+  .scanlines {
+    position: absolute; inset: 0; opacity: 0.06;
+    background: repeating-linear-gradient(0deg, transparent 0 3px, #9fefff 3px 4px);
+  }
+  #damage-flash {
+    position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(255,30,30,0.55) 100%);
+    opacity: 0; transition: opacity 0.35s;
+  }
+
+  /* ============================== CROSSHAIR ============================== */
+  #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #aef7ff; box-shadow: 0 0 4px #38e6ff; }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); clip-path: polygon(0 0, 100% 0, 100% 32%, 0 32%, 0 68%, 100% 68%, 100% 100%, 0 100%); }
+  #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); clip-path: polygon(0 0, 32% 0, 32% 100%, 0 100%, 68% 0, 100% 0, 100% 100%, 68% 100%); }
+  #hitmarker {
+    position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg) scale(0.6);
+    opacity: 0; transition: opacity 0.18s, transform 0.18s;
+  }
+  #hitmarker::before, #hitmarker::after { content:""; position: absolute; background: #ffd166; }
+  #hitmarker::before { left: 50%; top: 0; width: 3px; height: 100%; transform: translateX(-50%); }
+  #hitmarker::after  { top: 50%; left: 0; height: 3px; width: 100%; transform: translateY(-50%); }
+  #hitmarker.show { opacity: 1; transform: translate(-50%, -50%) rotate(45deg) scale(1); }
+
+  /* ============================== HUD PANELS ============================== */
+  .panel {
+    position: absolute; color: #bdf3ff; text-shadow: 0 0 6px rgba(60,220,255,0.6);
+    background: rgba(8, 18, 32, 0.55); border: 2px solid rgba(110, 210, 255, 0.35);
+    border-radius: 8px; padding: 8px 14px; font-size: 14px; letter-spacing: 1px;
+  }
+  #panel-top { top: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 26px; }
+  #panel-top b { color: #ffe066; }
+  #panel-left { bottom: 26px; left: 26px; width: 230px; }
+  #panel-right { bottom: 26px; right: 26px; text-align: right; }
+  .bar { height: 14px; background: rgba(255,255,255,0.08); border-radius: 4px; margin: 4px 0 8px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 4px; transition: width 0.15s; }
+  #hp-fill { background: linear-gradient(90deg, #ff4d4d, #ff884d); width: 100%; }
+  #energy-fill { background: linear-gradient(90deg, #38e6ff, #7cf6c8); width: 100%; }
+  #ammo-count { font-size: 34px; color: #eaffff; line-height: 1; }
+  #ammo-reserve { color: #7fd8e8; }
+  #pulse-status { margin-top: 6px; font-size: 12px; }
+  #pulse-status.ready { color: #7cf6c8; }
+  #dash-status { font-size: 12px; }
+  #dash-status.ready { color: #7cf6c8; }
+  #reload-hint { color: #ffd166; font-size: 12px; height: 14px; }
+
+  /* ============================== BANNERS / OVERLAYS ============================== */
+  #wave-banner {
+    position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
+    font-size: 42px; font-weight: bold; color: #ffe066; text-shadow: 0 0 18px rgba(255, 200, 60, 0.8);
+    opacity: 0; transition: opacity 0.4s; text-align: center; letter-spacing: 3px;
+  }
+  #wave-banner small { display: block; font-size: 16px; color: #bdf3ff; letter-spacing: 2px; }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(6, 10, 20, 0.88); color: #dff6ff; pointer-events: auto;
+    padding: 20px; box-sizing: border-box; overflow-y: auto; touch-action: pan-y;
+  }
+  .overlay h1 { font-size: clamp(28px, 8vw, 52px); margin: 0 0 6px; color: #ffe066; text-shadow: 0 0 24px rgba(255,210,80,0.7); letter-spacing: 4px; }
+  .overlay h2 { color: #7cf6c8; margin: 0 0 18px; font-weight: normal; letter-spacing: 2px; font-size: clamp(13px, 4vw, 22px); }
+  .overlay .controls { font-size: clamp(11px, 3.2vw, 15px); line-height: 1.9; color: #a9d8e8; margin-bottom: 20px; }
+  .overlay .controls b { color: #ffe066; display: inline-block; width: min(130px, 30vw); text-align: right; margin-right: 12px; }
+  .menu-buttons { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .overlay button, #upgrade-panel button {
+    pointer-events: auto; cursor: pointer; font-family: inherit;
+    background: rgba(20, 50, 80, 0.9); color: #dff6ff; border: 2px solid #38e6ff;
+    border-radius: 8px; padding: 13px 28px; font-size: clamp(14px, 4vw, 18px); letter-spacing: 2px;
+    transition: background 0.15s, transform 0.1s; min-width: min(260px, 70vw);
+  }
+  .overlay button:hover, #upgrade-panel button:hover { background: rgba(56, 160, 220, 0.9); transform: scale(1.04); }
+  .hidden { display: none !important; }
+
+  /* ============================== SETTINGS ============================== */
+  #settings-list { display: flex; flex-direction: column; gap: 14px; margin: 6px 0 26px; width: min(460px, 92vw); pointer-events: auto; }
+  .set-row { display: flex; align-items: center; gap: 12px; color: #bdf3ff; font-size: clamp(11px, 3vw, 14px); letter-spacing: 1px; }
+  .set-row label { width: min(150px, 34vw); text-align: right; }
+  .set-row input[type=range] { flex: 1; accent-color: #38e6ff; height: 28px; }
+  .set-row input[type=checkbox] { width: 24px; height: 24px; accent-color: #38e6ff; }
+  .set-row span { width: 48px; text-align: left; color: #ffe066; }
+
+  /* ============================== TOUCH CONTROLS ============================== */
+  canvas, #touch-ui { touch-action: none; }
+  #touch-ui { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+  #joy-zone  { position: absolute; left: 0;  bottom: 0; width: 45%; height: 70%; pointer-events: auto; }
+  #look-zone { position: absolute; right: 0; bottom: 0; width: 55%; height: 70%; pointer-events: auto; }
+  #joy-base {
+    position: absolute; display: none; width: 110px; height: 110px; margin: -55px 0 0 -55px;
+    border: 2px solid rgba(140, 220, 255, 0.5); border-radius: 50%; background: rgba(20, 40, 60, 0.3);
+  }
+  #joy-thumb {
+    position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(140, 220, 255, 0.6); transform: translate(-50%, -50%);
+  }
+  .tbtn {
+    position: absolute; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; border: 2px solid rgba(140, 220, 255, 0.6); background: rgba(20, 50, 80, 0.55);
+    color: #bdf3ff; font-weight: bold; pointer-events: auto; user-select: none; -webkit-user-select: none;
+    letter-spacing: 1px;
+  }
+  #tb-fire   { right: 24px;  bottom: 40px;  width: 96px; height: 96px; font-size: 17px; background: rgba(255, 90, 90, 0.4); border-color: rgba(255, 150, 150, 0.7); }
+  #tb-jump   { right: 138px; bottom: 26px;  width: 68px; height: 68px; font-size: 12px; }
+  #tb-dash   { right: 34px;  bottom: 154px; width: 68px; height: 68px; font-size: 12px; }
+  #tb-pulse  { right: 148px; bottom: 118px; width: 60px; height: 60px; font-size: 11px; }
+  #tb-reload { right: 232px; bottom: 62px;  width: 54px; height: 54px; font-size: 11px; }
+  #btn-pause {
+    position: absolute; top: 12px; right: 12px; width: 46px; height: 46px;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    border: 2px solid rgba(140, 220, 255, 0.6); border-radius: 10px;
+    background: rgba(20, 50, 80, 0.55); color: #bdf3ff; pointer-events: auto;
+    user-select: none; -webkit-user-select: none;
+  }
+
+  /* Compact HUD on touch devices: panels move to the top, clear of thumbs. */
+  body.touch .cockpit-corner, body.touch .scanlines { display: none; }
+  body.touch #panel-top { top: 10px; gap: 12px; font-size: 11px; padding: 5px 10px; }
+  body.touch #panel-left { left: 10px; bottom: auto; top: 60px; width: 160px; padding: 6px 10px; font-size: 11px; }
+  body.touch #panel-right { right: 10px; bottom: auto; top: 70px; padding: 6px 10px; font-size: 11px; }
+  body.touch #ammo-count { font-size: 22px; }
+  body.touch .bar { height: 10px; }
+  body.touch .dmg-num { font-size: 17px; }
+  body.touch .dmg-num.big { font-size: 26px; }
+
+  /* ============================== ROTATE HINT ============================== */
+  #rotate-hint {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: rgba(6, 10, 20, 0.96); color: #ffe066; text-align: center;
+    font-size: 20px; letter-spacing: 2px; pointer-events: auto;
+  }
+  #rotate-hint .phone { font-size: 54px; animation: rotatePhone 1.6s ease-in-out infinite; }
+  @keyframes rotatePhone {
+    0%, 20%  { transform: rotate(0deg); }
+    60%, 100% { transform: rotate(90deg); }
+  }
+  @media (orientation: portrait) {
+    body.touch #rotate-hint { display: flex; }
+  }
+
+  #upgrade-panel {
+    position: fixed; inset: 0; z-index: 25; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; background: rgba(6, 12, 24, 0.8); pointer-events: auto;
+  }
+  #upgrade-panel h2 { color: #ffe066; letter-spacing: 3px; text-shadow: 0 0 14px rgba(255,210,80,0.6); }
+  #upgrade-options { display: flex; gap: 18px; }
+  #upgrade-options button { width: 220px; padding: 20px 14px; font-size: 15px; }
+  #upgrade-options button small { display: block; margin-top: 8px; font-size: 12px; color: #9fd8e8; letter-spacing: 0; }
+
+  /* ============================== DAMAGE NUMBERS ============================== */
+  #dmg-layer { position: fixed; inset: 0; z-index: 15; pointer-events: none; overflow: hidden; }
+  .dmg-num {
+    position: absolute; color: #ffe066; font-weight: bold;
+    font-size: 22px; -webkit-text-stroke: 1px rgba(0,0,0,0.85);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.9), 0 0 10px rgba(255,220,100,0.5);
+    animation: dmgFloat 0.7s ease-out forwards;
+  }
+  .dmg-num.big {
+    color: #ff5db1; font-size: 34px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.9), 0 0 14px rgba(255,93,177,0.7);
+  }
+  @keyframes dmgFloat {
+    0%   { opacity: 1; margin-top: 0;      transform: translate(-50%, -50%) scale(1.6); }
+    18%  {                                 transform: translate(-50%, -50%) scale(1.0); }
+    100% { opacity: 0; margin-top: -120px; transform: translate(-50%, -50%) scale(0.85); }
+  }
+  #boost-status { color: #ffd166; font-size: 12px; margin-top: 4px; text-shadow: 0 0 8px rgba(255,210,80,0.8); }
+</style>
+</head>
+<body>
+
+<!-- ============================== HUD ============================== -->
+<div id="hud">
+  <div class="cockpit-vignette"></div>
+  <div class="scanlines"></div>
+  <div class="cockpit-corner tl"></div><div class="cockpit-corner tr"></div>
+  <div class="cockpit-corner bl"></div><div class="cockpit-corner br"></div>
+  <div id="damage-flash"></div>
+  <div id="crosshair"></div>
+  <div id="hitmarker"></div>
+
+  <div class="panel" id="panel-top">
+    <span>WAVE <b id="ui-wave">1</b></span>
+    <span>HOSTILES <b id="ui-enemies">0</b></span>
+    <span>SCORE <b id="ui-score">0</b></span>
+  </div>
+
+  <div class="panel" id="panel-left">
+    <div>HULL <span id="ui-hp-text">100/100</span></div>
+    <div class="bar"><div id="hp-fill"></div></div>
+    <div>BOOST ENERGY</div>
+    <div class="bar"><div id="energy-fill"></div></div>
+    <div id="dash-status">DASH [SHIFT]: READY</div>
+    <div id="boost-status"></div>
+  </div>
+
+  <div class="panel" id="panel-right">
+    <div>FOAM BOLT CANNON</div>
+    <div><span id="ammo-count">14</span> <span id="ammo-reserve">/ 84</span></div>
+    <div id="reload-hint"></div>
+    <div id="pulse-status">MAGNET PULSE [RMB/E]: READY</div>
+  </div>
+
+  <div id="wave-banner"></div>
+</div>
+
+<div id="dmg-layer"></div>
+
+<!-- ============================== UPGRADE PANEL ============================== -->
+<div id="upgrade-panel" class="hidden">
+  <h2>WAVE CLEARED — CHOOSE AN UPGRADE</h2>
+  <div id="upgrade-options"></div>
+</div>
+
+<!-- ============================== START SCREEN ============================== -->
+<div id="start-screen" class="overlay">
+  <h1>MINI MECH FPS</h1>
+  <h2>~ Giant Bedroom Assault ~</h2>
+  <div class="controls" id="controls-desktop">
+    <div><b>WASD</b>Move</div>
+    <div><b>MOUSE</b>Look</div>
+    <div><b>LMB</b>Foam Bolt Cannon</div>
+    <div><b>RMB / E</b>Magnet Pulse (push + stun)</div>
+    <div><b>SPACE</b>Jump / hold to Hover</div>
+    <div><b>SHIFT</b>Dash</div>
+    <div><b>R</b>Reload</div>
+  </div>
+  <div class="controls hidden" id="controls-touch">
+    <div><b>LEFT SIDE</b>Move joystick</div>
+    <div><b>RIGHT SIDE</b>Drag to aim</div>
+    <div><b>FIRE / JUMP</b>Hold JUMP to hover</div>
+    <div><b>DASH / PULSE</b>Dodge &amp; stun</div>
+  </div>
+  <div style="color:#ffd166; margin-bottom:20px;">Survive 10 waves of hostile toys to win.</div>
+  <div class="menu-buttons">
+    <button id="btn-start">DEPLOY MECH</button>
+    <button id="btn-settings-start">SETTINGS</button>
+  </div>
+</div>
+
+<!-- ============================== PAUSE SCREEN ============================== -->
+<div id="pause-screen" class="overlay hidden">
+  <h1>PAUSED</h1>
+  <div class="menu-buttons">
+    <button id="btn-resume">RESUME</button>
+    <button id="btn-settings-pause">SETTINGS</button>
+    <button id="btn-menu">MAIN MENU</button>
+  </div>
+</div>
+
+<!-- ============================== SETTINGS SCREEN ============================== -->
+<div id="settings-screen" class="overlay hidden">
+  <h1>SETTINGS</h1>
+  <div id="settings-list">
+    <div class="set-row"><label>SENSITIVITY</label><input type="range" id="set-sens" min="0.4" max="2.5" step="0.1"><span id="set-sens-v"></span></div>
+    <div class="set-row"><label>SCREEN SHAKE</label><input type="range" id="set-shake" min="0" max="1.5" step="0.1"><span id="set-shake-v"></span></div>
+    <div class="set-row"><label>VOLUME</label><input type="range" id="set-vol" min="0" max="1" step="0.05"><span id="set-vol-v"></span></div>
+    <div class="set-row"><label>FIELD OF VIEW</label><input type="range" id="set-fov" min="60" max="100" step="1"><span id="set-fov-v"></span></div>
+    <div class="set-row"><label>SHADOWS</label><input type="checkbox" id="set-shadows"><span></span></div>
+    <div class="set-row"><label>INVERT Y</label><input type="checkbox" id="set-inverty"><span></span></div>
+  </div>
+  <button id="btn-settings-back">BACK</button>
+</div>
+
+<!-- ============================== TOUCH CONTROLS ============================== -->
+<div id="touch-ui" class="hidden">
+  <div id="joy-zone"></div>
+  <div id="look-zone"></div>
+  <div id="joy-base"><div id="joy-thumb"></div></div>
+  <div class="tbtn" id="tb-fire">FIRE</div>
+  <div class="tbtn" id="tb-jump">JUMP</div>
+  <div class="tbtn" id="tb-dash">DASH</div>
+  <div class="tbtn" id="tb-pulse">PULSE</div>
+  <div class="tbtn" id="tb-reload">RLD</div>
+  <div id="btn-pause">| |</div>
+</div>
+
+<!-- ============================== ROTATE HINT (portrait on touch) ============================== -->
+<div id="rotate-hint">
+  <div class="phone">📱</div>
+  <div>ROTATE YOUR DEVICE</div>
+  <div style="font-size:13px; color:#a9d8e8;">This mech fights in landscape</div>
+</div>
+
+<!-- ============================== END SCREEN ============================== -->
+<div id="end-screen" class="overlay hidden">
+  <h1 id="end-title">MECH DESTROYED</h1>
+  <h2 id="end-stats"></h2>
+  <button id="btn-restart">RESTART</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =====================================================================
+ *  CONFIG — all tunable game constants live here.
+ * ===================================================================== */
+const CONFIG = {
+  world: {
+    roomSize: 210,          // width/depth of the bedroom
+    roomHeight: 92,
+    gravity: 120,
+    fogColor: 0xd7e8f7,
+    fogNear: 130,
+    fogFar: 340,
+  },
+  player: {
+    maxHp: 100,
+    moveSpeed: 30,
+    jumpSpeed: 36,
+    hoverAccel: 230,        // upward accel while hovering
+    hoverDrain: 30,         // energy per second while hovering
+    energyMax: 100,
+    energyRegen: 50,        // per second while grounded
+    dashSpeed: 90,
+    dashTime: 0.3,
+    dashCooldown: 1.1,
+    speedBoostMul: 1.5,     // temporary speed pickup multiplier
+    speedBoostTime: 6,      // seconds per speed pickup
+    halfExtents: new THREE.Vector3(1.1, 1.7, 1.1),  // player collision box
+    eyeHeight: 1.15,        // eye offset from body center
+    hitRadius: 2.0,         // radius for enemy projectiles / melee
+  },
+  weapon: {                 // Foam Bolt Cannon
+    damage: 16,
+    magSize: 20,
+    reserveStart: 140,
+    fireInterval: 0.09,
+    reloadTime: 0.85,
+    projectileSpeed: 320,
+    recoilKick: 0.9,
+  },
+  pulse: {                  // Magnet Pulse
+    cooldown: 2.5,
+    radius: 26,
+    force: 70,
+    stunTime: 1.5,
+    damage: 5,
+  },
+  enemies: {
+    toyBot:  { hp: 45, speed: 14, damage: 8,  fireInterval: 1.5, range: 85, projSpeed: 70, score: 100, standY: 3.2 },
+    beetle:  { hp: 30, speed: 24, damage: 10, meleeRange: 4.5, meleeInterval: 0.85, score: 80, standY: 1.4 },
+    turret:  { hp: 90, damage: 10, fireInterval: 1.1, range: 110, projSpeed: 85, turnSpeed: 2.4, score: 150 },
+    maxAlive: 16,
+  },
+  waves: {
+    winWave: 10,
+    count:      n => 6 + n * 2,
+    hpMul:      n => 1 + (n - 1) * 0.12,
+    dmgMul:     n => 1 + (n - 1) * 0.07,
+    spawnGap:   n => Math.max(0.45, 1.2 - n * 0.08),  // gap between spawn bursts
+    burst:      n => Math.min(4, 1 + Math.floor((n + 1) / 3)),  // enemies per burst, from different directions
+    beetleChance: n => Math.min(0.5, 0.18 + n * 0.04),
+    turretChance: n => n >= 2 ? Math.min(0.25, 0.06 + n * 0.02) : 0,
+    maxTurrets: 3,
+    clearBonus: n => 250 * n,
+  },
+  pickups: {
+    dropChance: 0.45,
+    weights: { health: 0.3, ammo: 0.45, speed: 0.25 },  // must sum to 1
+    healthAmount: 25,
+    ammoAmount: 36,
+    magnetRange: 12,
+    collectRange: 3.0,
+    lifeTime: 20,
+  },
+  // Game-feel knobs: shake, flash, recoil, trails. Crank to taste.
+  // (Firing shake is deliberately gentle — the weapon model recoil carries
+  //  the punch instead of the camera. Settings scale all shake further.)
+  feel: {
+    shakeFire: 0.1,
+    shakeDash: 0.22,
+    shakeHurt: 0.7,
+    shakeLandMul: 0.9,      // multiplier on landing shake
+    shakeDecay: 5.5,        // higher = snappier shake falloff
+    camRecoilPitch: 0.028,  // camera pitch kick per unit of weapon recoil
+    weaponRecoilRot: 0.34,  // weapon model rotation kick
+    hitFlashTime: 0.14,
+    hitPunchScale: 0.16,    // enemy scale punch on hit
+    trailInterval: 0.02,    // seconds between trail particles
+    trailSize: 0.45,
+  },
+  // Procedural asset palette — edit colors here.
+  palette: {
+    carpet: 0xc9a06c, rug1: 0xff6b6b, rug2: 0xffd93d, rug3: 0x4ecdc4,
+    wall: 0xbfe0f0, baseboard: 0x8fb8cf, ceiling: 0xf0ead6,
+    bedFrame: 0x8d5524, mattress: 0xf5f5f0, blanket: 0x4ecdc4, pillow: 0xffe8d6,
+    wood: 0xa05c2c, woodDark: 0x7a4520,
+    cardboard: 0xc89b6a, cardboardDark: 0xa87d4f,
+    blockColors: [0xef476f, 0x118ab2, 0xffd166, 0x06d6a0, 0x9b5de5],
+    bookColors: [0x2a9d8f, 0xe76f51, 0x264653, 0xe9c46a, 0x9b5de5],
+    pencil: 0xffc300, pencilTip: 0xe07a3f,
+    botBody: 0xff8c42, botDark: 0x50414b, botEye: 0x38e6ff,
+    beetleBody: 0x7d5ba6, beetleDark: 0x453a63, beetleEye: 0xff5db1,
+    turretBody: 0x4ea5d9, turretDark: 0x2c5f8a, turretBarrel: 0x50414b,
+    playerBolt: 0x9dff3a, enemyBall: 0xff5db1,
+    healthPickup: 0x4dff7c, ammoPickup: 0x38a8ff,
+  },
+};
+
+// Upgrade pool shown after each wave (3 random picks).
+const UPGRADES = [
+  { name: '+20 MAX HULL',       desc: 'Max health +20 and full repair',      apply: g => { g.player.maxHp += 20; g.player.hp = g.player.maxHp; } },
+  { name: 'FAST RELOAD',        desc: 'Reload time -20%',                    apply: g => { g.player.weapon.reloadTime *= 0.8; } },
+  { name: 'BIG MAGAZINE',       desc: 'Magazine size +8',                    apply: g => { g.player.weapon.magSize += 8; g.player.weapon.ammo += 8; } },
+  { name: 'HEAVY BOLTS',        desc: 'Projectile damage +6',                apply: g => { g.player.weapon.damage += 6; } },
+  { name: 'SERVO LEGS',         desc: 'Move speed +15%',                     apply: g => { g.player.moveSpeed *= 1.15; } },
+  { name: 'DASH COILS',         desc: 'Dash cooldown -25%',                  apply: g => { g.player.dashCooldown *= 0.75; } },
+  { name: 'MAGNET AMP',         desc: 'Pulse radius & force +25%',           apply: g => { g.player.pulse.radius *= 1.25; g.player.pulse.force *= 1.25; } },
+  { name: 'BOOST CELLS',        desc: 'Hover energy +30',                    apply: g => { g.player.energyMax += 30; g.player.energy = g.player.energyMax; } },
+];
+
+/* =====================================================================
+ *  UTILS
+ * ===================================================================== */
+const rand = (a, b) => a + Math.random() * (b - a);
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+// Touch device? Drives virtual controls + compact HUD layout.
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+
+// User settings (persisted to localStorage). Shadows default off on touch for perf.
+const SETTINGS_KEY = 'mmfps-settings';
+const DEFAULT_SETTINGS = { sensitivity: 1.0, shake: 0.8, volume: 1.0, fov: 75, shadows: !IS_TOUCH, invertY: false };
+
+/* =====================================================================
+ *  AUDIO MANAGER — all sounds synthesized with Web Audio.
+ * ===================================================================== */
+class AudioManager {
+  constructor() { this.ctx = null; this.master = null; this.volume = 1; }
+
+  setVolume(v) {
+    this.volume = v;
+    if (this.master) this.master.gain.value = 0.3 * v;
+  }
+
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.3 * this.volume;
+    this.master.connect(this.ctx.destination);
+    // Shared noise buffer for percussive sounds.
+    const len = this.ctx.sampleRate * 0.5;
+    this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = this.noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  // Simple oscillator blip: type, start/end freq, duration, volume.
+  tone(type, f0, f1, dur, vol = 0.5, delay = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(g); g.connect(this.master);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+
+  // Filtered noise burst: percussion / impacts / steps.
+  noise(dur, vol, filterFreq, filterType = 'lowpass', delay = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = this.ctx.createBiquadFilter();
+    f.type = filterType; f.frequency.value = filterFreq;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + dur + 0.02);
+  }
+
+  shoot()     { this.tone('square', 620, 140, 0.12, 0.35); this.noise(0.08, 0.25, 2400, 'bandpass'); }
+  enemyShoot(){ this.tone('square', 300, 90, 0.18, 0.22); }
+  hit()       { this.tone('triangle', 900, 300, 0.07, 0.3); }
+  explosion() { this.noise(0.45, 0.7, 900); this.tone('sawtooth', 160, 30, 0.4, 0.4); }
+  footstep()  { this.noise(0.07, 0.22, 500); this.tone('triangle', 85, 40, 0.08, 0.22); }
+  land()      { this.noise(0.18, 0.5, 400); this.tone('triangle', 70, 30, 0.16, 0.4); }
+  jump()      { this.tone('triangle', 200, 420, 0.14, 0.2); }
+  hover()     { this.tone('sine', 140, 160, 0.1, 0.06); }
+  dash()      { this.noise(0.25, 0.4, 3200, 'highpass'); this.tone('sawtooth', 200, 700, 0.2, 0.18); }
+  reloadStart(){ this.tone('square', 300, 180, 0.08, 0.25); }
+  reloadEnd() { this.tone('square', 250, 520, 0.09, 0.3); this.noise(0.05, 0.25, 3000, 'highpass', 0.05); }
+  pulse()     { this.tone('sine', 90, 500, 0.35, 0.5); this.tone('sine', 45, 250, 0.4, 0.4); }
+  hurt()      { this.tone('sawtooth', 220, 60, 0.25, 0.45); this.noise(0.2, 0.35, 700); }
+  pickup()    { this.tone('square', 520, 1040, 0.12, 0.3); this.tone('square', 780, 1560, 0.12, 0.2, 0.08); }
+  waveStart() { this.tone('square', 220, 220, 0.12, 0.3); this.tone('square', 330, 330, 0.12, 0.3, 0.14); this.tone('square', 440, 440, 0.2, 0.35, 0.28); }
+  win()       { [440, 550, 660, 880].forEach((f, i) => this.tone('square', f, f, 0.22, 0.3, i * 0.16)); }
+  lose()      { [330, 262, 196, 131].forEach((f, i) => this.tone('sawtooth', f, f * 0.9, 0.3, 0.3, i * 0.2)); }
+  click()     { this.tone('square', 700, 500, 0.05, 0.2); }
+}
+
+/* =====================================================================
+ *  UI MANAGER — DOM-based HUD, banners, damage numbers, upgrades.
+ * ===================================================================== */
+class UIManager {
+  constructor(game) {
+    this.game = game;
+    const $ = id => document.getElementById(id);
+    this.el = {
+      wave: $('ui-wave'), enemies: $('ui-enemies'), score: $('ui-score'),
+      hpText: $('ui-hp-text'), hpFill: $('hp-fill'), energyFill: $('energy-fill'),
+      ammoCount: $('ammo-count'), ammoReserve: $('ammo-reserve'),
+      reloadHint: $('reload-hint'), pulseStatus: $('pulse-status'), dashStatus: $('dash-status'),
+      boostStatus: $('boost-status'),
+      banner: $('wave-banner'), damageFlash: $('damage-flash'), hitmarker: $('hitmarker'),
+      dmgLayer: $('dmg-layer'),
+      upgradePanel: $('upgrade-panel'), upgradeOptions: $('upgrade-options'),
+      startScreen: $('start-screen'), pauseScreen: $('pause-screen'),
+      endScreen: $('end-screen'), endTitle: $('end-title'), endStats: $('end-stats'),
+    };
+    this.bannerTimer = 0;
+  }
+
+  update(dt) {
+    const g = this.game, p = g.player, w = p.weapon;
+    this.el.wave.textContent = g.waveManager.wave;
+    this.el.enemies.textContent = g.enemies.length + g.waveManager.queued + g.portals.length;
+    this.el.score.textContent = g.score;
+    this.el.hpText.textContent = `${Math.ceil(p.hp)}/${p.maxHp}`;
+    this.el.hpFill.style.width = `${clamp(p.hp / p.maxHp * 100, 0, 100)}%`;
+    this.el.energyFill.style.width = `${clamp(p.energy / p.energyMax * 100, 0, 100)}%`;
+    this.el.ammoCount.textContent = w.ammo;
+    this.el.ammoReserve.textContent = `/ ${w.reserve}`;
+    this.el.reloadHint.textContent = w.reloading ? 'RELOADING…' : (w.ammo === 0 ? 'PRESS R TO RELOAD' : '');
+
+    const pulseReady = p.pulseTimer <= 0;
+    this.el.pulseStatus.textContent = pulseReady ? 'MAGNET PULSE [RMB/E]: READY' : `MAGNET PULSE: ${p.pulseTimer.toFixed(1)}s`;
+    this.el.pulseStatus.classList.toggle('ready', pulseReady);
+    const dashReady = p.dashTimer <= 0;
+    this.el.dashStatus.textContent = dashReady ? 'DASH [SHIFT]: READY' : `DASH: ${p.dashTimer.toFixed(1)}s`;
+    this.el.dashStatus.classList.toggle('ready', dashReady);
+    this.el.boostStatus.textContent = p.speedBoostT > 0 ? `⚡ SPEED ×${CONFIG.player.speedBoostMul} — ${p.speedBoostT.toFixed(1)}s` : '';
+
+    if (this.bannerTimer > 0) {
+      this.bannerTimer -= dt;
+      if (this.bannerTimer <= 0) this.el.banner.style.opacity = 0;
+    }
+  }
+
+  banner(html, time = 2.4) {
+    this.el.banner.innerHTML = html;
+    this.el.banner.style.opacity = 1;
+    this.bannerTimer = time;
+  }
+
+  damageFlash() {
+    this.el.damageFlash.style.transition = 'none';
+    this.el.damageFlash.style.opacity = 1;
+    requestAnimationFrame(() => {
+      this.el.damageFlash.style.transition = 'opacity 0.4s';
+      this.el.damageFlash.style.opacity = 0;
+    });
+  }
+
+  hitmarker() {
+    const hm = this.el.hitmarker;
+    hm.classList.remove('show');
+    void hm.offsetWidth;               // restart CSS transition
+    hm.classList.add('show');
+    clearTimeout(this._hmT);
+    this._hmT = setTimeout(() => hm.classList.remove('show'), 140);
+  }
+
+  // Floating damage number at a world position.
+  damageNumber(worldPos, amount, big = false) {
+    const v = worldPos.clone().project(this.game.camera);
+    if (v.z > 1) return;               // behind camera
+    const x = (v.x * 0.5 + 0.5) * innerWidth;
+    const y = (-v.y * 0.5 + 0.5) * innerHeight;
+    const div = document.createElement('div');
+    div.className = 'dmg-num' + (big ? ' big' : '');
+    div.textContent = Math.round(amount);
+    div.style.left = `${x + rand(-14, 14)}px`;
+    div.style.top = `${y + rand(-10, 10)}px`;
+    this.el.dmgLayer.appendChild(div);
+    div.addEventListener('animationend', () => div.remove());
+  }
+
+  showUpgrades(options, onChoose) {
+    this.el.upgradeOptions.innerHTML = '';
+    for (const up of options) {
+      const btn = document.createElement('button');
+      btn.innerHTML = `${up.name}<small>${up.desc}</small>`;
+      btn.onclick = () => { onChoose(up); };
+      this.el.upgradeOptions.appendChild(btn);
+    }
+    this.el.upgradePanel.classList.remove('hidden');
+  }
+
+  hideUpgrades() { this.el.upgradePanel.classList.add('hidden'); }
+
+  showEnd(won, score, wave) {
+    this.el.endTitle.textContent = won ? 'BEDROOM DEFENDED!' : 'MECH DESTROYED';
+    this.el.endTitle.style.color = won ? '#7cf6c8' : '#ff6b6b';
+    this.el.endStats.textContent = `SCORE ${score} — REACHED WAVE ${wave}`;
+    this.el.endScreen.classList.remove('hidden');
+  }
+}
+
+/* =====================================================================
+ *  PARTICLE SYSTEM — pooled voxel-cube particles for every effect.
+ * ===================================================================== */
+class ParticleSystem {
+  constructor(scene, max = 520) {
+    this.scene = scene;
+    this.pool = [];
+    this.active = [];
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    for (let i = 0; i < max; i++) {
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ transparent: true }));
+      mesh.visible = false;
+      scene.add(mesh);
+      this.pool.push(mesh);
+    }
+  }
+
+  // Burst of cubes from a point.
+  burst(pos, color, count, { speed = 18, size = 0.6, life = 0.6, gravity = 40, spread = 1 } = {}) {
+    for (let i = 0; i < count; i++) {
+      const mesh = this.pool.pop();
+      if (!mesh) return;
+      mesh.visible = true;
+      mesh.position.copy(pos);
+      mesh.material.color.setHex(color);
+      mesh.material.opacity = 1;
+      const s = size * rand(0.5, 1.3);
+      mesh.scale.setScalar(s);
+      this.active.push({
+        mesh, life: 0, maxLife: life * rand(0.6, 1.2), gravity,
+        vel: V3(rand(-1, 1) * spread, rand(-0.4, 1.2), rand(-1, 1) * spread).normalize().multiplyScalar(speed * rand(0.4, 1.1)),
+        spin: V3(rand(-8, 8), rand(-8, 8), rand(-8, 8)),
+      });
+    }
+  }
+
+  update(dt) {
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const p = this.active[i];
+      p.life += dt;
+      if (p.life >= p.maxLife) {
+        p.mesh.visible = false;
+        this.pool.push(p.mesh);
+        this.active.splice(i, 1);
+        continue;
+      }
+      p.vel.y -= p.gravity * dt;
+      p.mesh.position.addScaledVector(p.vel, dt);
+      p.mesh.rotation.x += p.spin.x * dt;
+      p.mesh.rotation.y += p.spin.y * dt;
+      const t = 1 - p.life / p.maxLife;
+      p.mesh.material.opacity = t;
+      if (p.mesh.position.y < 0.2) { p.mesh.position.y = 0.2; p.vel.y *= -0.35; }
+    }
+  }
+}
+
+/* =====================================================================
+ *  PROCEDURAL ASSET FACTORY — builds the room, props and enemy bodies.
+ * ===================================================================== */
+class ProceduralAssetFactory {
+  constructor(scene, colliders) {
+    this.scene = scene;
+    this.colliders = colliders;
+    this.matCache = new Map();
+  }
+
+  mat(color, emissive = 0) {
+    const key = `${color}_${emissive}`;
+    if (!this.matCache.has(key)) {
+      this.matCache.set(key, new THREE.MeshLambertMaterial({ color, emissive, emissiveIntensity: emissive ? 0.9 : 0 }));
+    }
+    return this.matCache.get(key);
+  }
+
+  // Add a box mesh; optionally register it as a solid collider.
+  box(w, h, d, color, x, y, z, { collider = true, shadow = true, ry = 0, parent = this.scene, emissive = 0 } = {}) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this.mat(color, emissive));
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = ry;
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    if (collider) {
+      mesh.updateMatrixWorld(true);
+      this.colliders.push(new THREE.Box3().setFromObject(mesh));
+    }
+    return mesh;
+  }
+
+  cylinder(rt, rb, h, color, x, y, z, { collider = false, rz = 0, rx = 0, parent = this.scene, seg = 10 } = {}) {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), this.mat(color));
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(rx, 0, rz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    if (collider) {
+      mesh.updateMatrixWorld(true);
+      this.colliders.push(new THREE.Box3().setFromObject(mesh));
+    }
+    return mesh;
+  }
+
+  /* ------------------ THE GIANT BEDROOM ARENA ------------------ */
+  buildRoom() {
+    const P = CONFIG.palette;
+    const S = CONFIG.world.roomSize, H = CONFIG.world.roomHeight, half = S / 2;
+
+    // Floor (carpet) — ground plane handled analytically, mesh is visual.
+    const floor = this.box(S, 1, S, P.carpet, 0, -0.5, 0, { collider: false, shadow: false });
+    floor.receiveShadow = true;
+
+    // Rug — flat colorful rings near the center.
+    this.cylinder(34, 34, 0.3, P.rug1, 10, 0.15, 8, { seg: 24 });
+    this.cylinder(24, 24, 0.35, P.rug2, 10, 0.2, 8, { seg: 24 });
+    this.cylinder(13, 13, 0.4, P.rug3, 10, 0.25, 8, { seg: 24 });
+
+    // Walls + baseboards (solid, keep the player inside).
+    const wallT = 4;
+    this.box(S + 8, H, wallT, P.wall, 0, H / 2, -half - wallT / 2, { shadow: false });
+    this.box(S + 8, H, wallT, P.wall, 0, H / 2, half + wallT / 2, { shadow: false });
+    this.box(wallT, H, S + 8, P.wall, -half - wallT / 2, H / 2, 0, { shadow: false });
+    this.box(wallT, H, S + 8, P.wall, half + wallT / 2, H / 2, 0, { shadow: false });
+    this.box(S, 5, 1.2, P.baseboard, 0, 2.5, -half + 0.6, { collider: false });
+    this.box(S, 5, 1.2, P.baseboard, 0, 2.5, half - 0.6, { collider: false });
+    this.box(1.2, 5, S, P.baseboard, -half + 0.6, 2.5, 0, { collider: false });
+    this.box(1.2, 5, S, P.baseboard, half - 0.6, 2.5, 0, { collider: false });
+
+    // Ceiling (solid — stops hover escapes over the walls).
+    this.box(S, 2, S, P.ceiling, 0, H + 1, 0, { shadow: false });
+
+    // Window (flat, glowing) + frame on the north wall.
+    this.box(50, 40, 0.8, 0xfff6d8, -40, 52, -half + 1.6, { collider: false, shadow: false, emissive: 0xfff2c0 });
+    this.box(54, 3, 1.4, 0xffffff, -40, 73, -half + 1.8, { collider: false });
+    this.box(54, 3, 1.4, 0xffffff, -40, 31, -half + 1.8, { collider: false });
+    this.box(3, 44, 1.4, 0xffffff, -40, 52, -half + 1.8, { collider: false });
+    this.box(3, 44, 1.4, 0xffffff, -66, 52, -half + 1.8, { collider: false });
+    this.box(3, 44, 1.4, 0xffffff, -14, 52, -half + 1.8, { collider: false });
+
+    // Door (flat) on the east wall.
+    this.box(0.8, 58, 30, 0xd9a066, half - 1.6, 29, 40, { collider: false });
+    this.box(0.8, 58, 3, 0xb07a40, half - 1.9, 29, 26, { collider: false });
+    this.cylinder(1.4, 1.4, 1.5, 0xffd166, half - 2.6, 30, 30, { rz: Math.PI / 2 });
+
+    // ---- Giant bed (north-west corner): frame, mattress, pillow, blanket.
+    this.box(70, 10, 46, P.bedFrame, -66, 5, -78);
+    this.box(68, 8, 44, P.mattress, -66, 14, -78);
+    this.box(24, 6, 16, P.pillow, -88, 21, -88);
+    this.box(46, 5, 40, P.blanket, -54, 20, -76);
+    this.box(4, 30, 46, P.bedFrame, -99, 15, -78);              // headboard
+
+    // ---- Desk (south-east) with legs, top and a chair.
+    const dx = 68, dz = 68;
+    this.box(3.5, 34, 3.5, P.woodDark, dx - 24, 17, dz - 14);
+    this.box(3.5, 34, 3.5, P.woodDark, dx + 24, 17, dz - 14);
+    this.box(3.5, 34, 3.5, P.woodDark, dx - 24, 17, dz + 14);
+    this.box(3.5, 34, 3.5, P.woodDark, dx + 24, 17, dz + 14);
+    this.box(56, 3, 34, P.wood, dx, 35.5, dz);                  // desk top (turret perch)
+    // Chair.
+    this.box(16, 2.5, 16, P.wood, dx - 6, 17, dz - 36);
+    this.box(2.5, 16, 2.5, P.woodDark, dx - 12, 8, dz - 42);
+    this.box(2.5, 16, 2.5, P.woodDark, dx, 8, dz - 42);
+    this.box(2.5, 16, 2.5, P.woodDark, dx - 12, 8, dz - 30);
+    this.box(2.5, 16, 2.5, P.woodDark, dx, 8, dz - 30);
+    this.box(16, 20, 2.5, P.wood, dx - 6, 28, dz - 43);
+
+    // ---- Book stair (climbable steps up to a reading platform).
+    const B = P.bookColors;
+    this.box(26, 4, 18, B[0], -60, 2, 55);
+    this.box(24, 4, 17, B[1], -64, 6, 50, { ry: 0.15 });
+    this.box(22, 4, 16, B[2], -68, 10, 44, { ry: -0.1 });
+    this.box(28, 5, 20, B[3], -72, 14.5, 36, { ry: 0.05 });     // top platform
+    // Loose books as low cover.
+    this.box(22, 3.5, 15, B[4], 30, 1.75, -30, { ry: 0.5 });
+    this.box(20, 3.5, 14, B[0], 34, 5.25, -33, { ry: 0.3 });
+
+    // ---- Toy blocks — scattered colorful cubes (cover / jump platforms).
+    const blockSpots = [
+      [-20, -45, 7], [-12, -40, 5], [40, 10, 6], [48, 14, 5],
+      [-40, 20, 6], [15, 48, 7], [22, 52, 5], [70, -20, 6], [76, -14, 5],
+    ];
+    blockSpots.forEach(([x, z, s], i) => {
+      this.box(s, s, s, P.blockColors[i % P.blockColors.length], x, s / 2, z, { ry: rand(0, Math.PI) });
+    });
+
+    // ---- Cardboard boxes (big cover, some stacked into ramps).
+    this.box(28, 18, 28, P.cardboard, 62, 9, -62);
+    this.box(20, 12, 20, P.cardboardDark, 44, 6, -70);          // step up to big box
+    this.box(10, 6, 10, P.cardboard, 32, 3, -74);               // first step
+    this.box(24, 16, 24, P.cardboard, -20, 8, 78, { ry: 0.4 });
+    this.box(14, 8, 14, P.cardboardDark, -38, 4, 72, { ry: 0.2 });
+
+    // ---- Pencils (decor, no collision).
+    for (let i = 0; i < 5; i++) {
+      const px = rand(-30, 50), pz = rand(-15, 40);
+      const pen = this.cylinder(0.9, 0.9, 22, P.pencil, px, 1.0, pz, { rz: Math.PI / 2 });
+      pen.rotation.y = rand(0, Math.PI);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3, 8), this.mat(P.pencilTip));
+      tip.position.y = 12.5;                 // along the cylinder axis (was floating beside the pencil)
+      tip.castShadow = true;
+      pen.add(tip);
+      const lead = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.2, 6), this.mat(0x333333));
+      lead.position.y = 13.6;
+      pen.add(lead);
+      const eraser = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.4, 10), this.mat(0xff8fa3));
+      eraser.position.y = -11.7;
+      pen.add(eraser);
+    }
+
+    // ---- Shoe (two boxes, decor with collision).
+    this.box(12, 7, 26, 0xe63946, -80, 3.5, 20, { ry: 0.9 });
+    this.box(11, 4, 10, 0xf1faee, -73, 2, 28, { ry: 0.9 });
+
+    // ---- Wall shelves (decor). Shelf tops sit at y=61.25 / y=75.25.
+    this.box(50, 2.5, 12, P.wood, 40, 60, -half + 7, { collider: false });
+    this.box(50, 2.5, 12, P.wood, 40, 74, -half + 7, { collider: false });
+    this.box(8, 10, 8, P.blockColors[0], 26, 66.25, -half + 7, { collider: false });
+    this.box(8, 12, 8, P.blockColors[3], 42, 67.25, -half + 7, { collider: false });
+    this.box(8, 8, 8, P.blockColors[1], 56, 65.25, -half + 7, { collider: false });
+    this.box(3, 11, 10, B[1], 24, 80.75, -half + 7, { collider: false });   // shelved books
+    this.box(3, 10, 9, B[2], 28, 80.25, -half + 7, { collider: false });
+    this.box(3, 12, 10, B[4], 32, 81.25, -half + 7, { collider: false, ry: 0.12 });
+
+    // ---- Hanging ceiling lamp.
+    this.box(0.8, 16, 0.8, 0x555555, 0, H - 8, 0, { collider: false, shadow: false });
+    this.cylinder(4.5, 9.5, 7, 0xffd166, 0, H - 19, 0, { seg: 12 });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff6d8 }));
+    bulb.position.set(0, H - 23, 0);
+    this.scene.add(bulb);
+
+    // ---- Posters on the south wall.
+    this.box(30, 40, 0.8, 0x264653, -50, 50, half - 1.8, { collider: false, shadow: false });
+    this.box(26, 36, 0.8, 0x2a9d8f, -50, 50, half - 2.2, { collider: false, shadow: false });
+    this.box(8, 14, 0.8, 0xe9c46a, -50, 52, half - 2.6, { collider: false, shadow: false });   // rocket body
+    this.box(4, 5, 0.8, 0xe76f51, -50, 43, half - 2.6, { collider: false, shadow: false });    // rocket flame
+    this.box(26, 30, 0.8, 0xef476f, -6, 48, half - 1.8, { collider: false, shadow: false });
+    this.box(20, 24, 0.8, 0xfff1e6, -6, 48, half - 2.2, { collider: false, shadow: false });
+    this.box(10, 10, 0.8, 0x118ab2, -6, 50, half - 2.6, { collider: false, shadow: false, ry: 0 });
+
+    // ---- Curtains + rod beside the window.
+    this.cylinder(0.8, 0.8, 70, P.bedFrame, -40, 77, -half + 3.4, { rz: Math.PI / 2 });
+    this.box(9, 48, 2.4, 0xef476f, -72, 52, -half + 3.4, { collider: false });
+    this.box(9, 48, 2.4, 0xef476f, -8, 52, -half + 3.4, { collider: false });
+
+    // ---- Bouncy ball (solid cover).
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(7, 14, 10), this.mat(0xe63946));
+    ball.position.set(-30, 7, -40);
+    ball.castShadow = true; ball.receiveShadow = true;
+    this.scene.add(ball);
+    const stripe = new THREE.Mesh(new THREE.CylinderGeometry(7.15, 7.15, 2.2, 14), this.mat(0xf1faee));
+    stripe.position.copy(ball.position);
+    this.scene.add(stripe);
+    this.colliders.push(new THREE.Box3().setFromObject(ball));
+
+    // ---- Alarm clock + pencil mug on the desk (desk top at y=37).
+    this.box(7, 5.5, 3.6, 0x118ab2, 52, 39.75, 62, { collider: false });
+    this.box(5.2, 4, 0.5, 0xf1faee, 52, 40, 60.2, { collider: false });
+    const bellL = new THREE.Mesh(new THREE.SphereGeometry(1.2, 8, 6), this.mat(0xffd166));
+    bellL.position.set(50, 43.2, 62); this.scene.add(bellL);
+    const bellR = bellL.clone(); bellR.position.x = 54; this.scene.add(bellR);
+    this.cylinder(3, 2.6, 7, 0x9b5de5, 86, 40.5, 76, { seg: 10 });
+    this.cylinder(0.7, 0.7, 12, P.pencil, 85, 45, 75.4, { rz: 0.18 });
+    this.cylinder(0.7, 0.7, 11, 0x06d6a0, 87, 44.5, 76.6, { rz: -0.22 });
+
+    // ---- Wall clock on the east wall.
+    this.cylinder(8, 8, 1.4, 0xf1faee, half - 2.6, 62, -30, { rz: Math.PI / 2, seg: 16 });
+    this.box(0.8, 6, 0.8, 0x264653, half - 3.5, 64.2, -30, { collider: false });
+    this.box(0.8, 0.8, 6.5, 0xe63946, half - 3.5, 62, -26.8, { collider: false });
+  }
+
+  /* ------------------ ENEMY BODIES (voxel-style) ------------------ */
+  // Each build returns { group, parts } — parts are referenced by the AI for animation.
+  // Materials are cloned per-instance so hit-flash doesn't affect siblings.
+
+  clonedMat(color) { return new THREE.MeshLambertMaterial({ color }); }
+
+  part(parent, w, h, d, color, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this.clonedMat(color));
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    parent.add(m);
+    return m;
+  }
+
+  buildToyBot() {
+    const P = CONFIG.palette;
+    const group = new THREE.Group();
+    const body = new THREE.Group(); group.add(body);
+    this.part(body, 3.4, 3.6, 2.4, P.botBody, 0, 0, 0);                 // torso
+    this.part(body, 3.7, 0.7, 2.7, P.botDark, 0, -1.6, 0);              // hip plate
+    this.part(body, 2.4, 0.5, 2.5, P.botDark, 0, 1.7, 0);               // collar
+    const core = this.part(body, 1.2, 1.2, 0.4, P.botEye, 0, 0.3, 1.25);// glowing chest core
+    core.material.emissive = new THREE.Color(P.botEye);
+    this.part(body, 2.0, 2.6, 1.2, P.botDark, 0, 0.3, -1.7);            // backpack
+    this.part(body, 0.5, 1.6, 0.5, 0x888888, -0.6, 2.4, -1.8);          // exhaust pipes
+    this.part(body, 0.5, 1.2, 0.5, 0x888888, 0.6, 2.2, -1.8);
+    this.part(body, 2.6, 2.2, 2.2, P.botBody, 0, 3.0, 0);               // head
+    const eye = this.part(body, 1.8, 0.7, 0.3, P.botEye, 0, 3.2, 1.15); // visor
+    eye.material.emissive = new THREE.Color(P.botEye);
+    this.part(body, 0.5, 1.0, 0.5, P.botDark, 0, 4.6, 0);               // antenna mast
+    const beacon = this.part(body, 0.5, 0.5, 0.5, 0xff5db1, 0, 5.3, 0); // antenna beacon
+    beacon.material.emissive = new THREE.Color(0xff5db1);
+
+    const mkLimb = (x, y, len, w) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, y, 0);
+      body.add(pivot);
+      this.part(pivot, w, len, w, P.botDark, 0, -len / 2, 0);
+      return pivot;
+    };
+    const armL = mkLimb(-2.2, 1.4, 2.6, 0.9);
+    const armR = mkLimb(2.2, 1.4, 2.6, 0.9);
+    const legL = mkLimb(-0.9, -1.8, 2.4, 1.1);
+    const legR = mkLimb(0.9, -1.8, 2.4, 1.1);
+    // Shoulder pads + feet + left fist.
+    this.part(body, 1.5, 0.9, 1.5, P.botBody, -2.2, 2.1, 0);
+    this.part(body, 1.5, 0.9, 1.5, P.botBody, 2.2, 2.1, 0);
+    this.part(legL, 1.4, 0.7, 1.8, P.botDark, 0, -2.55, 0.25);
+    this.part(legR, 1.4, 0.7, 1.8, P.botDark, 0, -2.55, 0.25);
+    this.part(armL, 1.1, 1.1, 1.1, P.botDark, 0, -2.9, 0);
+
+    // Hand blaster held on the right arm, with a glowing muzzle.
+    this.part(armR, 1.3, 1.3, 2.6, P.botDark, 0, -2.7, 1.0);            // gun body
+    this.part(armR, 0.8, 0.8, 1.0, P.botBody, 0, -2.0, 1.4);            // top rail
+    const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.42, 1.8, 8), this.clonedMat(P.turretBarrel));
+    gunBarrel.rotation.x = Math.PI / 2;
+    gunBarrel.position.set(0, -2.7, 3.0);
+    gunBarrel.castShadow = true;
+    armR.add(gunBarrel);
+    const gunGlow = this.part(armR, 0.55, 0.55, 0.55, P.enemyBall, 0, -2.7, 4.0);
+    gunGlow.material.emissive = new THREE.Color(P.enemyBall);
+    const gunMuzzle = new THREE.Object3D();
+    gunMuzzle.position.set(0, -2.7, 4.4);
+    armR.add(gunMuzzle);
+    return { group, parts: { body, armL, armR, legL, legR, gunMuzzle } };
+  }
+
+  buildBeetleDrone() {
+    const P = CONFIG.palette;
+    const group = new THREE.Group();
+    const body = new THREE.Group(); group.add(body);
+    this.part(body, 4.4, 1.8, 5.6, P.beetleBody, 0, 0, 0);              // shell
+    this.part(body, 3.8, 0.8, 4.8, P.beetleDark, 0, 1.1, -0.4);         // shell dome
+    this.part(body, 0.7, 0.4, 5.2, 0xffd166, 0, 1.55, -0.4);            // center stripe
+    this.part(body, 1.8, 0.5, 4.4, P.beetleBody, -1.3, 1.4, -0.6).rotation.z = 0.18;  // wing covers
+    this.part(body, 1.8, 0.5, 4.4, P.beetleBody, 1.3, 1.4, -0.6).rotation.z = -0.18;
+    this.part(body, 1.6, 0.9, 1.4, P.beetleDark, 0, 0.2, -3.2);         // tail segment
+    this.part(body, 3.0, 1.2, 2.2, P.beetleDark, 0, 0.4, 3.4);          // head
+    const eL = this.part(body, 0.5, 0.5, 0.5, P.beetleEye, -0.9, 0.9, 4.3);
+    const eR = this.part(body, 0.5, 0.5, 0.5, P.beetleEye, 0.9, 0.9, 4.3);
+    eL.material.emissive = new THREE.Color(P.beetleEye);
+    eR.material.emissive = new THREE.Color(P.beetleEye);
+    this.part(body, 0.25, 1.8, 0.25, P.beetleDark, -0.8, 1.8, 4.0).rotation.x = -0.5; // antennae
+    this.part(body, 0.25, 1.8, 0.25, P.beetleDark, 0.8, 1.8, 4.0).rotation.x = -0.5;
+    const aL = this.part(body, 0.4, 0.4, 0.4, 0xffd166, -0.8, 2.6, 4.5);              // antenna tips
+    const aR = this.part(body, 0.4, 0.4, 0.4, 0xffd166, 0.8, 2.6, 4.5);
+    aL.material.emissive = new THREE.Color(0xffd166);
+    aR.material.emissive = new THREE.Color(0xffd166);
+
+    // Snapping mandible pincers — the beetle's melee weapon.
+    const pincerL = new THREE.Group(); pincerL.position.set(-1.1, 0.2, 4.3); body.add(pincerL);
+    this.part(pincerL, 0.45, 0.45, 1.8, P.beetleDark, 0.3, 0, 0.9).rotation.y = 0.45;
+    const pincerR = new THREE.Group(); pincerR.position.set(1.1, 0.2, 4.3); body.add(pincerR);
+    this.part(pincerR, 0.45, 0.45, 1.8, P.beetleDark, -0.3, 0, 0.9).rotation.y = -0.45;
+
+    const legs = [];
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 3; i++) {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * 2.2, -0.5, 1.8 - i * 1.8);
+        body.add(pivot);
+        this.part(pivot, 0.5, 1.6, 0.5, P.beetleDark, side * 0.4, -0.8, 0).rotation.z = side * 0.5;
+        legs.push(pivot);
+      }
+    }
+    return { group, parts: { body, legs, pincerL, pincerR } };
+  }
+
+  buildTurretToy() {
+    const P = CONFIG.palette;
+    const group = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 1.6, 12), this.clonedMat(P.turretDark));
+    base.position.y = 0.8; base.castShadow = true;
+    group.add(base);
+    // Tripod feet.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const foot = this.part(group, 1.2, 0.8, 3.6, P.turretDark, Math.sin(a) * 3.2, 0.5, Math.cos(a) * 3.2);
+      foot.rotation.y = a;
+    }
+    this.part(group, 1.6, 2.2, 1.6, P.turretDark, 0, 2.3, 0);           // column
+    const head = new THREE.Group();
+    head.position.y = 4.2;
+    group.add(head);
+    this.part(head, 3.6, 2.4, 3.6, P.turretBody, 0, 0, 0);
+    this.part(head, 1.5, 1.9, 2.0, P.turretDark, -2.5, 0, -0.4);        // ammo drum housing
+    this.part(head, 2.2, 1.0, 2.2, P.turretBody, 0, 1.7, -0.7);         // top hopper
+    const blink = this.part(head, 0.55, 0.55, 0.55, 0xff3355, 0, 2.5, -0.7);  // status light
+    blink.material.emissive = new THREE.Color(0xff3355);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 4.4, 8), this.clonedMat(P.turretBarrel));
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.1, 3.2);
+    barrel.castShadow = true;
+    head.add(barrel);
+    this.part(head, 1.1, 1.1, 0.9, P.turretDark, 0, 0.1, 5.0);          // muzzle brake
+    const eye = this.part(head, 1.0, 1.0, 0.3, 0xffd166, 0, 0.9, 1.9);
+    eye.material.emissive = new THREE.Color(0xffd166);
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.1, 5.8);
+    head.add(muzzle);
+    return { group, parts: { head, barrel, muzzle, blink } };
+  }
+
+  /* ------------------ FIRST-PERSON WEAPON MODEL ------------------ */
+  buildFoamCannon() {
+    const P = CONFIG.palette;
+    const group = new THREE.Group();
+    const m = (w, h, d, c, x, y, z) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this.mat(c));
+      mesh.position.set(x, y, z);
+      group.add(mesh);
+      return mesh;
+    };
+    m(0.5, 0.55, 1.6, 0x50414b, 0, 0, 0);                        // receiver
+    m(0.34, 0.34, 1.3, 0xff8c42, 0, 0.08, -1.2);                 // barrel
+    m(0.4, 0.4, 0.1, 0x50414b, 0, 0.08, -1.0);                   // barrel cooling rings
+    m(0.42, 0.42, 0.1, 0x50414b, 0, 0.08, -1.35);
+    m(0.44, 0.44, 0.1, 0x50414b, 0, 0.08, -1.7);
+    m(0.42, 0.42, 0.42, 0x38a8ff, 0, 0.35, 0.2);                 // top core
+    m(0.55, 0.14, 0.9, 0x50414b, 0, 0.36, 0.55);                 // rear housing
+    m(0.1, 0.14, 0.6, 0x50414b, 0, 0.36, -0.7);                  // sight rail
+    m(0.09, 0.2, 0.09, 0xff8c42, 0, 0.44, -0.95);                // front sight post
+    m(0.3, 0.5, 0.4, 0x50414b, 0, -0.45, 0.5);                   // grip
+    m(0.3, 0.55, 0.5, 0x38a8ff, 0, -0.52, -0.1);                 // magazine
+    m(0.07, 0.35, 0.85, 0xff8c42, -0.3, 0.1, -0.9);              // side fins
+    m(0.07, 0.35, 0.85, 0xff8c42, 0.3, 0.1, -0.9);
+    m(0.2, 0.3, 0.7, 0x9dff3a, 0, 0.12, -0.4);                   // glow strip
+    const glow = group.children[group.children.length - 1];
+    glow.material = new THREE.MeshBasicMaterial({ color: P.playerBolt });
+    // Muzzle flash quad (shown briefly when firing).
+    const flash = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 0.5, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.95 })
+    );
+    flash.position.set(0, 0.08, -2.0);
+    flash.visible = false;
+    group.add(flash);
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.08, -2.0);
+    group.add(muzzle);
+    return { group, muzzle, flash };
+  }
+}
+
+/* =====================================================================
+ *  SHARED AABB COLLISION — per-axis move & slide vs static colliders.
+ * ===================================================================== */
+function collideMove(colliders, pos, he, vel, dt) {
+  let grounded = false;
+
+  const overlaps = c =>
+    pos.x + he.x > c.min.x && pos.x - he.x < c.max.x &&
+    pos.y + he.y > c.min.y && pos.y - he.y < c.max.y &&
+    pos.z + he.z > c.min.z && pos.z - he.z < c.max.z;
+
+  // X axis
+  pos.x += vel.x * dt;
+  for (const c of colliders) if (overlaps(c)) {
+    pos.x = vel.x > 0 ? c.min.x - he.x : c.max.x + he.x;
+    vel.x = 0;
+  }
+  // Z axis
+  pos.z += vel.z * dt;
+  for (const c of colliders) if (overlaps(c)) {
+    pos.z = vel.z > 0 ? c.min.z - he.z : c.max.z + he.z;
+    vel.z = 0;
+  }
+  // Y axis (+ analytic floor at y = 0)
+  pos.y += vel.y * dt;
+  if (pos.y - he.y < 0) { pos.y = he.y; if (vel.y < 0) grounded = true; vel.y = Math.max(0, vel.y); }
+  for (const c of colliders) if (overlaps(c)) {
+    if (vel.y <= 0) { pos.y = c.max.y + he.y; grounded = true; }
+    else { pos.y = c.min.y - he.y; }
+    vel.y = 0;
+  }
+  return grounded;
+}
+
+// Is a point inside any collider? (projectile vs world)
+function pointInWorld(colliders, p) {
+  for (const c of colliders) if (c.containsPoint(p)) return true;
+  return false;
+}
+
+/* =====================================================================
+ *  PROJECTILE
+ * ===================================================================== */
+class Projectile {
+  constructor(game, pos, dir, opts) {
+    this.game = game;
+    this.pos = pos.clone();
+    this.vel = dir.clone().normalize().multiplyScalar(opts.speed);
+    this.damage = opts.damage;
+    this.fromPlayer = opts.fromPlayer;
+    this.radius = opts.radius ?? 0.6;
+    this.gravity = opts.gravity ?? 0;
+    this.life = 0;
+    this.maxLife = opts.maxLife ?? 3.5;
+    this.color = opts.color;
+    this.trailTimer = 0;
+    this.dead = false;
+
+    const size = this.fromPlayer ? 0.7 : 1.0;
+    const geo = this.fromPlayer ? new THREE.BoxGeometry(size, size, size * 2.2) : new THREE.SphereGeometry(size, 8, 6);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: opts.color }));
+    this.mesh.position.copy(this.pos);
+    this.mesh.lookAt(this.pos.clone().add(dir));
+    game.scene.add(this.mesh);
+  }
+
+  update(dt) {
+    this.life += dt;
+    if (this.life > this.maxLife) return this.kill(false);
+
+    this.vel.y -= this.gravity * dt;
+    this.pos.addScaledVector(this.vel, dt);
+    this.mesh.position.copy(this.pos);
+    this.mesh.rotation.z += dt * 8;
+
+    // Trail particles (dense, bright, short-lived).
+    this.trailTimer -= dt;
+    if (this.trailTimer <= 0) {
+      this.trailTimer = CONFIG.feel.trailInterval;
+      this.game.particles.burst(this.pos, this.color, 1, { speed: 2, size: CONFIG.feel.trailSize, life: 0.32, gravity: 0, spread: 0.4 });
+    }
+
+    // World collision.
+    if (this.pos.y < 0.2 || pointInWorld(this.game.colliders, this.pos)) return this.kill(true);
+
+    if (this.fromPlayer) {
+      for (const e of this.game.enemies) {
+        if (!e.alive) continue;
+        if (this.pos.distanceTo(e.center()) < e.hitRadius + this.radius) {
+          e.takeDamage(this.damage, this.pos);
+          return this.kill(true);
+        }
+      }
+    } else {
+      const p = this.game.player;
+      const eye = p.eyePos();
+      const bodyCenter = p.position;
+      if (this.pos.distanceTo(eye) < CONFIG.player.hitRadius || this.pos.distanceTo(bodyCenter) < CONFIG.player.hitRadius) {
+        p.takeDamage(this.damage);
+        return this.kill(true);
+      }
+    }
+  }
+
+  kill(impact) {
+    if (this.dead) return;
+    this.dead = true;
+    if (impact) {
+      this.game.particles.burst(this.pos, this.color, 8, { speed: 18, size: 0.5, life: 0.4, gravity: 30 });
+      this.game.particles.burst(this.pos, 0xffffff, 3, { speed: 26, size: 0.3, life: 0.2, gravity: 0 });
+    }
+    this.game.scene.remove(this.mesh);
+    this.mesh.geometry.dispose();
+    this.mesh.material.dispose();
+  }
+}
+
+/* =====================================================================
+ *  PICKUP — health / ammo cubes dropped by enemies.
+ * ===================================================================== */
+class Pickup {
+  constructor(game, pos, type) {
+    this.game = game;
+    this.type = type;                                  // 'health' | 'ammo' | 'speed'
+    this.pos = pos.clone(); this.pos.y = 2.2;
+    this.life = 0;
+    this.dead = false;
+    const color = { health: CONFIG.palette.healthPickup, ammo: CONFIG.palette.ammoPickup, speed: 0xffd166 }[type];
+    this.mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 1.8, 1.8),
+      new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.55 })
+    );
+    // Detail: white cross (health), dark band + tip (ammo), chevrons (speed).
+    if (type === 'health') {
+      const detailMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const h = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.55, 0.55), detailMat);
+      const v = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.0, 0.55), detailMat);
+      this.mesh.add(h, v);
+    } else if (type === 'ammo') {
+      const detailMat = new THREE.MeshBasicMaterial({ color: 0x1d3557 });
+      const band = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.6, 2.0), detailMat);
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), detailMat);
+      tip.position.y = 1.2;
+      this.mesh.add(band, tip);
+    } else {
+      const detailMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const c1 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.5), detailMat);
+      const c2 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.5), detailMat);
+      c1.rotation.z = 0.7;  c1.position.set(-0.3, 0.4, 1.0);
+      c2.rotation.z = -0.7; c2.position.set(-0.3, -0.4, 1.0);
+      this.mesh.add(c1, c2);                           // ">" chevron on the face
+    }
+    this.mesh.castShadow = true;
+    this.mesh.position.copy(this.pos);
+    game.scene.add(this.mesh);
+  }
+
+  update(dt) {
+    const C = CONFIG.pickups;
+    this.life += dt;
+    if (this.life > C.lifeTime) return this.kill();
+
+    const p = this.game.player;
+    const d = this.pos.distanceTo(p.position);
+    if (d < C.magnetRange) {                          // drift toward the player
+      const dir = p.position.clone().sub(this.pos).normalize();
+      this.pos.addScaledVector(dir, dt * 14);
+    }
+    this.mesh.position.set(this.pos.x, this.pos.y + Math.sin(this.life * 4) * 0.5, this.pos.z);
+    this.mesh.rotation.y += dt * 2.5;
+
+    if (d < C.collectRange) {
+      if (this.type === 'health') p.hp = Math.min(p.maxHp, p.hp + C.healthAmount);
+      else if (this.type === 'ammo') p.weapon.reserve += C.ammoAmount;
+      else {
+        p.speedBoostT = CONFIG.player.speedBoostTime;
+        this.game.ui.banner('<small>⚡ SPEED BOOST ⚡</small>', 0.9);
+      }
+      this.game.audio.pickup();
+      this.game.particles.burst(this.pos, this.mesh.material.color.getHex(), 10, { speed: 12, size: 0.4, life: 0.4 });
+      this.kill();
+    }
+  }
+
+  kill() {
+    if (this.dead) return;
+    this.dead = true;
+    this.game.scene.remove(this.mesh);
+    this.mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  }
+}
+
+/* =====================================================================
+ *  ENEMY BASE CLASS
+ * ===================================================================== */
+class Enemy {
+  constructor(game, pos, stats, hpMul, dmgMul) {
+    this.game = game;
+    this.stats = stats;
+    this.hp = stats.hp * hpMul;
+    this.maxHp = this.hp;
+    this.damage = stats.damage * dmgMul;
+    this.alive = true;
+    this.stun = 0;
+    this.flashT = 0;
+    this.hitPunch = 0;
+    this.animT = rand(0, 10);
+    this.knockback = V3();
+    this.vel = V3();
+    this.centerOffset = V3();
+    this.hitRadius = 3.2;
+    this.he = new THREE.Vector3(1.8, stats.standY ?? 2, 1.8);  // collision half extents
+
+    this.position = pos.clone();
+    this.group = new THREE.Group();
+    this.group.position.copy(this.position);
+    game.scene.add(this.group);
+    this.materials = [];
+
+    // Spawn-in effect (ease-out-back scale pop, ticked in baseUpdate).
+    this.spawnT = 0;
+    this.group.scale.setScalar(0.01);
+    game.particles.burst(pos.clone().add(V3(0, 2, 0)), 0xffffff, 12, { speed: 14, size: 0.5, life: 0.4 });
+  }
+
+  collectMaterials() {
+    this.group.traverse(o => {
+      if (o.isMesh) {
+        o.material.userData.baseEmissive = o.material.emissive.getHex();
+        this.materials.push(o.material);
+      }
+    });
+  }
+
+  center() { return this.position.clone().add(this.centerOffset); }
+
+  distToPlayer() { return this.position.distanceTo(this.game.player.position); }
+
+  dirToPlayer() { return this.game.player.position.clone().sub(this.position).setY(0).normalize(); }
+
+  facePlayer(dt, speed = 6) {
+    const d = this.dirToPlayer();
+    const target = Math.atan2(d.x, d.z);
+    let diff = target - this.group.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.group.rotation.y += clamp(diff, -speed * dt, speed * dt);
+  }
+
+  takeDamage(dmg, hitPos) {
+    if (!this.alive) return;
+    this.hp -= dmg;
+    this.flashT = CONFIG.feel.hitFlashTime;
+    this.hitPunch = 1;
+    for (const m of this.materials) m.emissive.setHex(0xffffff);
+    this.game.audio.hit();
+    this.game.ui.hitmarker();
+    this.game.ui.damageNumber(hitPos ?? this.center(), dmg, dmg >= 30);
+    this.game.particles.burst(hitPos ?? this.center(), 0xffe066, 8, { speed: 14, size: 0.45, life: 0.32 });
+    if (this.hp <= 0) this.die();
+  }
+
+  applyPulse(force, stunTime, fromPos) {
+    if (!this.alive || this.stats.stationary) { this.stun = Math.max(this.stun, stunTime); return; }
+    const dir = this.position.clone().sub(fromPos).setY(0).normalize();
+    this.knockback.add(dir.multiplyScalar(force));
+    this.stun = Math.max(this.stun, stunTime);
+  }
+
+  die() {
+    this.alive = false;
+    this.game.onEnemyKilled(this);
+    this.game.audio.explosion();
+    // Double burst: chunky fireball + fast white sparks.
+    this.game.particles.burst(this.center(), 0xff8c42, 20, { speed: 30, size: 0.8, life: 0.7 });
+    this.game.particles.burst(this.center(), 0xffe066, 12, { speed: 44, size: 0.45, life: 0.45 });
+    if (this.distToPlayer() < 45) this.game.addShake(0.3);   // nearby kills thump
+    this.game.spawnDebris(this.group);                 // voxel parts pop apart
+    this.destroy();
+  }
+
+  destroy() {
+    this.game.scene.remove(this.group);
+    this.group.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  }
+
+  // Shared per-frame bookkeeping. Returns false while spawning (skip AI).
+  baseUpdate(dt) {
+    // Scale-in on spawn with a toy-like overshoot pop.
+    if (this.spawnT < 0.4) {
+      this.spawnT += dt;
+      const k = clamp(this.spawnT / 0.4, 0, 1);
+      const c = 1.9;                                   // ease-out-back overshoot
+      const s = 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2);
+      this.group.scale.setScalar(Math.max(0.01, s));
+    } else {
+      // Scale punch on hit — the whole body pops for a frame or two.
+      this.hitPunch = Math.max(0, this.hitPunch - dt * 8);
+      this.group.scale.setScalar(1 + this.hitPunch * CONFIG.feel.hitPunchScale);
+    }
+    // Hit flash restore.
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      if (this.flashT <= 0) for (const m of this.materials) m.emissive.setHex(m.userData.baseEmissive);
+    }
+    // Knockback decay.
+    this.knockback.multiplyScalar(Math.max(0, 1 - dt * 4));
+    if (this.stun > 0) {
+      this.stun -= dt;
+      // Stunned shiver.
+      this.group.position.x = this.position.x + rand(-0.15, 0.15);
+      this.group.position.z = this.position.z + rand(-0.15, 0.15);
+      // Still apply knockback while stunned (movers only).
+      if (!this.stats.stationary) this.moveWithCollision(this.knockback, dt);
+      return false;
+    }
+    return this.spawnT >= 0.25;
+  }
+
+  moveWithCollision(horizontalVel, dt) {
+    const vel = V3(horizontalVel.x, this.vel.y, horizontalVel.z);
+    vel.y -= CONFIG.world.gravity * dt;
+    collideMove(this.game.colliders, this.position, this.he, vel, dt);
+    this.vel.y = vel.y;
+    this.group.position.copy(this.position);
+  }
+
+  fireAt(targetPos, speed, color, damage, origin) {
+    const muzzle = origin ?? this.center().add(V3(0, 1, 0));
+    const dir = targetPos.clone().sub(muzzle).normalize();
+    dir.x += rand(-0.04, 0.04); dir.y += rand(-0.03, 0.03); dir.z += rand(-0.04, 0.04);
+    this.game.projectiles.push(new Projectile(this.game, muzzle, dir, {
+      speed, damage, color, fromPlayer: false, radius: 1.0, maxLife: 5,
+    }));
+    this.game.audio.enemyShoot();
+  }
+}
+
+/* ---------------------- TOY BOT — walks & shoots ---------------------- */
+class ToyBot extends Enemy {
+  constructor(game, pos, hpMul, dmgMul) {
+    super(game, pos, CONFIG.enemies.toyBot, hpMul, dmgMul);
+    const built = game.factory.buildToyBot();
+    this.group.add(built.group);
+    built.group.position.y = 1.0;                     // feet touch the floor
+    this.parts = built.parts;
+    this.collectMaterials();
+    this.fireTimer = rand(1, this.stats.fireInterval);
+    this.he.set(1.8, 3.2, 1.8);
+    this.position.y = this.he.y;
+    this.hitRadius = 4.0;
+    this.strafe = pick([-1, 1]);
+    this.strafeT = rand(1.2, 2.6);
+  }
+
+  update(dt) {
+    if (!this.baseUpdate(dt)) return;
+    this.animT += dt;
+    const dist = this.distToPlayer();
+    this.facePlayer(dt);
+
+    // Aggressive: advance close, then orbit-strafe instead of standing still.
+    let moving = false;
+    const desired = V3().copy(this.knockback);
+    const fwd = this.dirToPlayer();
+    if (dist > this.stats.range * 0.45) {
+      desired.add(fwd.clone().multiplyScalar(this.stats.speed));
+      moving = true;
+    }
+    if (dist < this.stats.range * 0.8) {
+      this.strafeT -= dt;
+      if (this.strafeT <= 0) { this.strafeT = rand(1.2, 2.6); this.strafe *= -1; }
+      desired.add(V3(-fwd.z, 0, fwd.x).multiplyScalar(this.stats.speed * 0.7 * this.strafe));
+      moving = true;
+    }
+    this.moveWithCollision(desired, dt);
+
+    // Animation: walking leg/arm swing + idle bob.
+    const swing = moving ? Math.sin(this.animT * 9) * 0.6 : 0;
+    this.parts.legL.rotation.x = swing;
+    this.parts.legR.rotation.x = -swing;
+    this.parts.armL.rotation.x = -swing * 0.7;
+    this.parts.armR.rotation.x = swing * 0.7;
+    this.parts.body.position.y = Math.sin(this.animT * 2.2) * 0.18;   // idle bob
+    // Raise the blaster arm to aim while the player is in range.
+    if (dist < this.stats.range) this.parts.armR.rotation.x = -Math.PI / 2 + Math.sin(this.animT * 2.2) * 0.06;
+
+    // Shoot from the hand blaster's muzzle.
+    this.fireTimer -= dt;
+    if (this.fireTimer <= 0 && dist < this.stats.range) {
+      this.fireTimer = this.stats.fireInterval * rand(0.85, 1.15);
+      const muzzlePos = V3();
+      this.parts.gunMuzzle.getWorldPosition(muzzlePos);
+      this.fireAt(this.game.player.eyePos(), this.stats.projSpeed, CONFIG.palette.enemyBall, this.damage, muzzlePos);
+      this.game.particles.burst(muzzlePos, CONFIG.palette.enemyBall, 3, { speed: 6, size: 0.3, life: 0.2, gravity: 0 });
+      this.parts.armR.rotation.x = -Math.PI / 2 - 0.45;   // recoil kick
+    }
+  }
+}
+
+/* ---------------------- BEETLE DRONE — fast melee ---------------------- */
+class BeetleDrone extends Enemy {
+  constructor(game, pos, hpMul, dmgMul) {
+    super(game, pos, CONFIG.enemies.beetle, hpMul, dmgMul);
+    const built = game.factory.buildBeetleDrone();
+    this.group.add(built.group);
+    built.group.position.y = 0.6;                     // legs touch the floor
+    this.parts = built.parts;
+    this.collectMaterials();
+    this.meleeTimer = 0;
+    this.he.set(2.2, 1.5, 2.2);
+    this.position.y = this.he.y;
+    this.hitRadius = 3.0;
+    this.strafe = pick([-1, 1]);                       // weave direction
+  }
+
+  update(dt) {
+    if (!this.baseUpdate(dt)) return;
+    this.animT += dt;
+    const dist = this.distToPlayer();
+    this.facePlayer(dt, 8);
+
+    const desired = V3().copy(this.knockback);
+    if (dist > this.stats.meleeRange * 0.8) {
+      const fwd = this.dirToPlayer();
+      const side = V3(-fwd.z, 0, fwd.x).multiplyScalar(Math.sin(this.animT * 2.4) * 0.45 * this.strafe);
+      desired.add(fwd.add(side).normalize().multiplyScalar(this.stats.speed));
+    }
+    this.moveWithCollision(desired, dt);
+
+    // Scuttling leg animation.
+    this.parts.legs.forEach((leg, i) => {
+      leg.rotation.x = Math.sin(this.animT * 16 + i * 1.3) * 0.55;
+    });
+    this.parts.body.position.y = Math.sin(this.animT * 3) * 0.12;     // idle bob
+    this.parts.body.position.z *= Math.max(0, 1 - dt * 6);            // lunge spring-back
+    // Pincers snap faster the closer the player gets.
+    const snap = dist < 12 ? 12 : 5;
+    this.parts.pincerL.rotation.y = 0.25 + Math.sin(this.animT * snap) * 0.3;
+    this.parts.pincerR.rotation.y = -0.25 - Math.sin(this.animT * snap) * 0.3;
+
+    // Melee bite.
+    this.meleeTimer -= dt;
+    if (dist < this.stats.meleeRange && this.meleeTimer <= 0) {
+      this.meleeTimer = this.stats.meleeInterval;
+      this.game.player.takeDamage(this.damage);
+      this.parts.body.position.z = 1.2;               // lunge pose (springs back via bob)
+      this.game.particles.burst(this.game.player.position.clone(), 0xff5db1, 6, { speed: 10, size: 0.35, life: 0.3 });
+    }
+  }
+}
+
+/* ---------------------- TURRET TOY — stationary tracker ---------------------- */
+class TurretToy extends Enemy {
+  constructor(game, pos, hpMul, dmgMul) {
+    super(game, pos, CONFIG.enemies.turret, hpMul, dmgMul);
+    this.stats = Object.assign({ stationary: true }, CONFIG.enemies.turret);
+    const built = game.factory.buildTurretToy();
+    this.group.add(built.group);
+    this.parts = built.parts;
+    this.collectMaterials();
+    this.fireTimer = rand(1.0, 2.0);
+    this.he.set(2.4, 2.8, 2.4);
+    // Turrets sit exactly where placed (may be elevated); position.y is the base.
+    this.centerOffset.set(0, 3.4, 0);
+    this.group.position.copy(this.position);
+    this.hitRadius = 3.6;
+  }
+
+  update(dt) {
+    if (!this.baseUpdate(dt)) return;
+    this.group.position.copy(this.position);          // clear stun shiver offset
+    this.animT += dt;
+    const player = this.game.player;
+    const toPlayer = player.eyePos().sub(this.group.position.clone().add(V3(0, 4.2, 0)));
+    const dist = toPlayer.length();
+
+    // Rotate head toward the player at limited speed.
+    const targetYaw = Math.atan2(toPlayer.x, toPlayer.z);
+    let diff = targetYaw - this.parts.head.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const step = clamp(diff, -this.stats.turnSpeed * dt, this.stats.turnSpeed * dt);
+    this.parts.head.rotation.y += step;
+    // Slight pitch tracking.
+    const flat = Math.sqrt(toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z);
+    this.parts.head.rotation.x = clamp(-Math.atan2(toPlayer.y, flat) * 0.7, -0.5, 0.35);
+    // Idle bob + blinking status light.
+    this.parts.head.position.y = 4.2 + Math.sin(this.animT * 2) * 0.12;
+    this.parts.blink.material.emissiveIntensity = 0.5 + Math.sin(this.animT * 7) * 0.5;
+
+    // Fire foam balls when roughly aimed.
+    this.fireTimer -= dt;
+    if (this.fireTimer <= 0 && Math.abs(diff) < 0.18 && dist < this.stats.range) {
+      this.fireTimer = this.stats.fireInterval;
+      const muzzlePos = V3();
+      this.parts.muzzle.getWorldPosition(muzzlePos);
+      const dir = player.eyePos().sub(muzzlePos).normalize();
+      this.game.projectiles.push(new Projectile(this.game, muzzlePos, dir, {
+        speed: this.stats.projSpeed, damage: this.damage, color: CONFIG.palette.enemyBall,
+        fromPlayer: false, radius: 1.1, maxLife: 5,
+      }));
+      this.game.audio.enemyShoot();
+      this.parts.barrel.position.z = 2.4;              // recoil
+      this.game.particles.burst(muzzlePos, 0xffd166, 4, { speed: 8, size: 0.35, life: 0.25 });
+    }
+    this.parts.barrel.position.z += (3.2 - this.parts.barrel.position.z) * dt * 8;
+  }
+}
+
+/* =====================================================================
+ *  WEAPONS
+ * ===================================================================== */
+class Weapon {
+  // Foam Bolt Cannon — hitscan-feel fast projectiles, magazine + reload.
+  constructor(game) {
+    this.game = game;
+    const C = CONFIG.weapon;
+    this.damage = C.damage;
+    this.magSize = C.magSize;
+    this.ammo = C.magSize;
+    this.reserve = C.reserveStart;
+    this.fireInterval = C.fireInterval;
+    this.reloadTime = C.reloadTime;
+    this.fireTimer = 0;
+    this.reloading = false;
+    this.reloadT = 0;
+    this.recoil = 0;
+    this.flashTimer = 0;
+
+    const built = game.factory.buildFoamCannon();
+    this.model = built.group;
+    this.muzzle = built.muzzle;
+    this.flash = built.flash;
+    this.basePos = new THREE.Vector3(0.85, -0.75, -1.5);
+    this.model.position.copy(this.basePos);
+    game.camera.add(this.model);
+  }
+
+  tryFire() {
+    if (this.reloading || this.fireTimer > 0) return;
+    if (this.ammo <= 0) { this.startReload(); return; }
+    this.ammo--;
+    this.fireTimer = this.fireInterval;
+    this.recoil = 1;
+    this.flashTimer = 0.05;
+    this.flash.visible = true;
+    this.flash.scale.setScalar(rand(0.9, 1.8));
+
+    // Spawn projectile from the muzzle, toward the camera's aim direction.
+    const muzzlePos = V3();
+    this.muzzle.getWorldPosition(muzzlePos);
+    const dir = V3();
+    this.game.camera.getWorldDirection(dir);
+    // Aim convergence: shoot toward a far point along the camera's center ray.
+    const target = this.game.camera.getWorldPosition(V3()).addScaledVector(dir, 200);
+    const shotDir = target.sub(muzzlePos).normalize();
+    this.game.projectiles.push(new Projectile(this.game, muzzlePos, shotDir, {
+      speed: CONFIG.weapon.projectileSpeed, damage: this.damage,
+      color: CONFIG.palette.playerBolt, fromPlayer: true, radius: 0.7, maxLife: 2.5,
+    }));
+
+    this.game.audio.shoot();
+    this.game.addShake(CONFIG.feel.shakeFire);
+    if (this.ammo === 0) this.startReload();
+  }
+
+  startReload() {
+    if (this.reloading || this.reserve <= 0 || this.ammo >= this.magSize) return;
+    this.reloading = true;
+    this.reloadT = 0;
+    this.game.audio.reloadStart();
+  }
+
+  update(dt) {
+    this.fireTimer -= dt;
+    // Recoil spring-back (fast, punchy).
+    this.recoil = Math.max(0, this.recoil - dt * 9);
+    if (this.flashTimer > 0) { this.flashTimer -= dt; if (this.flashTimer <= 0) this.flash.visible = false; }
+
+    // Reload animation: weapon dips and rolls, then snaps back.
+    if (this.reloading) {
+      this.reloadT += dt;
+      const t = clamp(this.reloadT / this.reloadTime, 0, 1);
+      this.model.rotation.x = Math.sin(t * Math.PI) * -0.9;
+      this.model.rotation.z = Math.sin(t * Math.PI) * 0.35;
+      if (t >= 1) {
+        this.reloading = false;
+        const need = this.magSize - this.ammo;
+        const take = Math.min(need, this.reserve);
+        this.ammo += take;
+        this.reserve -= take;
+        this.game.audio.reloadEnd();
+      }
+    } else {
+      // Muzzle-climb rotation kick proportional to recoil.
+      this.model.rotation.x = -this.recoil * CONFIG.feel.weaponRecoilRot;
+      this.model.rotation.z = this.recoil * 0.06;
+    }
+
+    // Recoil + subtle sway applied to weapon position.
+    const p = this.game.player;
+    const sway = Math.sin(p.bobT * 2) * 0.03 * p.bobAmount;
+    this.model.position.set(
+      this.basePos.x + sway,
+      this.basePos.y + Math.abs(Math.sin(p.bobT)) * 0.05 * p.bobAmount,
+      this.basePos.z + this.recoil * CONFIG.weapon.recoilKick
+    );
+  }
+}
+
+class MagnetPulse {
+  // Secondary — radial push + stun with an expanding ring effect.
+  constructor(game) {
+    this.game = game;
+    const C = CONFIG.pulse;
+    this.radius = C.radius;
+    this.force = C.force;
+    this.stunTime = C.stunTime;
+    this.rings = [];
+  }
+
+  fire() {
+    const g = this.game, p = g.player;
+    g.audio.pulse();
+    g.addShake(0.5);
+
+    // Affect enemies in radius.
+    for (const e of g.enemies) {
+      if (e.position.distanceTo(p.position) < this.radius) {
+        e.applyPulse(this.force, this.stunTime, p.position);
+        e.takeDamage(CONFIG.pulse.damage, e.center());
+      }
+    }
+    // Destroy enemy projectiles caught in the pulse.
+    for (const pr of g.projectiles) {
+      if (!pr.fromPlayer && pr.pos.distanceTo(p.position) < this.radius) pr.kill(true);
+    }
+    // Visual: two expanding rings.
+    for (const [delay, color] of [[0, 0x38e6ff], [0.08, 0x7cf6c8]]) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(1, 0.35, 6, 32),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.copy(p.position).setY(1.2);
+      g.scene.add(ring);
+      this.rings.push({ mesh: ring, t: -delay });
+    }
+    g.particles.burst(p.position.clone(), 0x38e6ff, 14, { speed: 20, size: 0.5, life: 0.4, gravity: 6 });
+  }
+
+  update(dt) {
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.t += dt;
+      if (r.t < 0) continue;
+      const k = r.t / 0.4;
+      if (k >= 1) {
+        this.game.scene.remove(r.mesh);
+        r.mesh.geometry.dispose(); r.mesh.material.dispose();
+        this.rings.splice(i, 1);
+        continue;
+      }
+      r.mesh.scale.setScalar(1 + k * this.radius);
+      r.mesh.material.opacity = 0.9 * (1 - k);
+    }
+  }
+}
+
+/* =====================================================================
+ *  PLAYER — movement, camera, damage, dash/hover, weapons.
+ * ===================================================================== */
+class Player {
+  constructor(game) {
+    this.game = game;
+    const C = CONFIG.player;
+    this.maxHp = C.maxHp;
+    this.hp = C.maxHp;
+    this.moveSpeed = C.moveSpeed;
+    this.dashCooldown = C.dashCooldown;
+    this.energyMax = C.energyMax;
+    this.energy = C.energyMax;
+
+    this.position = V3(0, C.halfExtents.y, 30);        // body center
+    this.vel = V3();
+    this.yaw = Math.PI;                                 // face room center
+    this.pitch = 0;
+    this.grounded = true;
+    this.wasGrounded = true;
+    this.bobT = 0;
+    this.bobAmount = 0;
+    this.stepDist = 0;
+    this.dashTimer = 0;                                 // cooldown remaining
+    this.dashActive = 0;                                // time left in dash
+    this.dashDir = V3();
+    this.pulseTimer = 0;
+    this.hoverSoundT = 0;
+    this.jumpReady = true;
+    this.speedBoostT = 0;                              // temporary speed-pickup timer
+    this.dead = false;
+
+    this.weapon = new Weapon(game);
+    this.pulse = new MagnetPulse(game);
+    this.pulse.radius = CONFIG.pulse.radius;
+    this.pulse.force = CONFIG.pulse.force;
+  }
+
+  eyePos() { return this.position.clone().add(V3(0, CONFIG.player.eyeHeight, 0)); }
+
+  // Merged movement intent from keyboard and touch joystick (pre-yaw, analog).
+  getMoveInput() {
+    const i = this.game.input;
+    const dir = V3();
+    if (i.keys['KeyW']) dir.z -= 1;
+    if (i.keys['KeyS']) dir.z += 1;
+    if (i.keys['KeyA']) dir.x -= 1;
+    if (i.keys['KeyD']) dir.x += 1;
+    dir.x += i.joyX; dir.z += i.joyY;
+    if (dir.lengthSq() > 1) dir.normalize();
+    return dir;
+  }
+
+  tryDash() {
+    if (this.dashTimer > 0 || this.dashActive > 0) return;
+    const dir = this.getMoveInput();
+    if (dir.lengthSq() < 0.002) dir.z = -1;            // default: dash forward
+    dir.normalize().applyAxisAngle(V3(0, 1, 0), this.yaw);
+    this.dashDir.copy(dir);
+    this.dashActive = CONFIG.player.dashTime;
+    this.dashTimer = this.dashCooldown;
+    this.game.audio.dash();
+    this.game.fovKick = 1;
+    this.game.addShake(CONFIG.feel.shakeDash);
+    this.game.particles.burst(this.position.clone(), 0xbde0fe, 12, { speed: 18, size: 0.45, life: 0.35, gravity: 4 });
+  }
+
+  tryPulse() {
+    if (this.pulseTimer > 0) return;
+    this.pulseTimer = CONFIG.pulse.cooldown;
+    this.pulse.fire();
+  }
+
+  takeDamage(dmg) {
+    if (this.dead || this.game.state !== 'playing') return;
+    this.hp -= dmg;
+    this.game.audio.hurt();
+    this.game.addShake(CONFIG.feel.shakeHurt);
+    this.game.ui.damageFlash();
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.dead = true;
+      this.game.gameOver(false);
+    }
+  }
+
+  update(dt) {
+    const C = CONFIG.player;
+    const input = this.game.input;
+
+    // ---- Horizontal movement intent (keyboard + joystick, camera-relative).
+    const dir = this.getMoveInput();
+    const moving = dir.lengthSq() > 0.002;
+    if (moving) dir.applyAxisAngle(V3(0, 1, 0), this.yaw);
+
+    // Speed boost pickup timer + exhaust trail while active.
+    this.speedBoostT = Math.max(0, this.speedBoostT - dt);
+    const speedMul = this.speedBoostT > 0 ? C.speedBoostMul : 1;
+    if (this.speedBoostT > 0 && moving && Math.random() < 0.5) {
+      this.game.particles.burst(this.position.clone().add(V3(0, -1.2, 0)), 0xffd166, 1, { speed: 5, size: 0.35, life: 0.3, gravity: 0 });
+    }
+
+    // Smooth acceleration toward desired velocity (strong air control for dodging).
+    const targetVx = dir.x * this.moveSpeed * speedMul;
+    const targetVz = dir.z * this.moveSpeed * speedMul;
+    const accel = this.grounded ? 14 : 9;
+    this.vel.x += (targetVx - this.vel.x) * Math.min(1, accel * dt);
+    this.vel.z += (targetVz - this.vel.z) * Math.min(1, accel * dt);
+
+    // ---- Dash.
+    this.dashTimer = Math.max(0, this.dashTimer - dt);
+    if (this.dashActive > 0) {
+      this.dashActive -= dt;
+      this.vel.x = this.dashDir.x * C.dashSpeed * speedMul;
+      this.vel.z = this.dashDir.z * C.dashSpeed * speedMul;
+      if (Math.random() < 0.6) this.game.particles.burst(this.position.clone().add(V3(0, -0.5, 0)), 0xbde0fe, 1, { speed: 4, size: 0.35, life: 0.3, gravity: 0 });
+    }
+
+    // ---- Jump / hover boost.
+    this.vel.y -= CONFIG.world.gravity * dt;
+    if (input.keys['Space']) {
+      if (this.grounded && this.jumpReady) {
+        this.vel.y = C.jumpSpeed;
+        this.jumpReady = false;
+        this.game.audio.jump();
+      } else if (!this.grounded && this.energy > 0 && this.vel.y < 14) {
+        // Hover: hold space in the air.
+        this.vel.y += C.hoverAccel * dt;
+        this.energy = Math.max(0, this.energy - C.hoverDrain * dt);
+        this.hoverSoundT -= dt;
+        if (this.hoverSoundT <= 0) { this.hoverSoundT = 0.1; this.game.audio.hover(); }
+        this.game.particles.burst(this.position.clone().add(V3(rand(-0.6, 0.6), -1.6, rand(-0.6, 0.6))), 0x7cf6c8, 1, { speed: 6, size: 0.3, life: 0.3, gravity: -10 });
+      }
+    } else {
+      this.jumpReady = true;
+    }
+    if (this.grounded) this.energy = Math.min(this.energyMax, this.energy + C.energyRegen * dt);
+
+    // ---- Move with collision.
+    const fallSpeed = -this.vel.y;
+    this.wasGrounded = this.grounded;
+    this.grounded = collideMove(this.game.colliders, this.position, C.halfExtents, this.vel, dt);
+
+    // Landing thump.
+    if (this.grounded && !this.wasGrounded && fallSpeed > 24) {
+      this.game.audio.land();
+      this.game.addShake(clamp(fallSpeed / 70, 0.2, 0.8) * CONFIG.feel.shakeLandMul);
+      this.game.particles.burst(this.position.clone().add(V3(0, -1.5, 0)), 0xc9a06c, 6, { speed: 8, size: 0.4, life: 0.35 });
+    }
+
+    // ---- Camera bob + mechanical footsteps.
+    const speed2d = Math.hypot(this.vel.x, this.vel.z);
+    if (this.grounded && speed2d > 2) {
+      this.bobT += dt * speed2d * 0.6;
+      this.bobAmount = Math.min(1, this.bobAmount + dt * 6);
+      this.stepDist += speed2d * dt;
+      if (this.stepDist > 7.5) { this.stepDist = 0; this.game.audio.footstep(); this.game.addShake(0.06); }
+    } else {
+      this.bobAmount = Math.max(0, this.bobAmount - dt * 4);
+    }
+
+    // ---- Weapons.
+    this.pulseTimer = Math.max(0, this.pulseTimer - dt);
+    if (input.mouseL) this.weapon.tryFire();
+    this.weapon.update(dt);
+    this.pulse.update(dt);
+  }
+}
+
+/* =====================================================================
+ *  SPAWN PORTAL — telegraphed enemy spawn: pulsing ring + light column,
+ *  then the enemy pops in with an overshoot scale-up.
+ * ===================================================================== */
+class SpawnPortal {
+  constructor(game, pos, onSpawn) {
+    this.game = game;
+    this.pos = pos.clone();
+    this.onSpawn = onSpawn;
+    this.t = 0;
+    this.dur = 0.55;
+    this.done = false;
+
+    const groundY = this.pos.y + 0.4;
+    this.ring = new THREE.Mesh(
+      new THREE.TorusGeometry(3.2, 0.35, 6, 24),
+      new THREE.MeshBasicMaterial({ color: 0xff5db1, transparent: true, opacity: 0.9 })
+    );
+    this.ring.rotation.x = Math.PI / 2;
+    this.ring.position.set(this.pos.x, groundY, this.pos.z);
+    game.scene.add(this.ring);
+
+    this.column = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.2, 2.8, 10, 10, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xff5db1, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
+    );
+    this.column.position.set(this.pos.x, groundY + 5, this.pos.z);
+    game.scene.add(this.column);
+  }
+
+  update(dt) {
+    this.t += dt;
+    const k = clamp(this.t / this.dur, 0, 1);
+    // Ring pulses and tightens; column brightens as the spawn nears.
+    const pulse = 1 + Math.sin(this.t * 22) * 0.12;
+    this.ring.scale.setScalar((1.6 - k * 0.8) * pulse);
+    this.ring.material.opacity = 0.4 + k * 0.6;
+    this.column.scale.set(1 - k * 0.5, 1, 1 - k * 0.5);
+    this.column.material.opacity = 0.1 + k * 0.4;
+    this.column.rotation.y += dt * 6;
+    if (Math.random() < 0.4) {
+      this.game.particles.burst(
+        this.pos.clone().add(V3(rand(-2.5, 2.5), 0.6, rand(-2.5, 2.5))),
+        0xff5db1, 1, { speed: 3, size: 0.35, life: 0.45, gravity: -16, spread: 0.3 }
+      );
+    }
+
+    if (this.t >= this.dur) {
+      this.done = true;
+      this.game.scene.remove(this.ring);
+      this.game.scene.remove(this.column);
+      this.ring.geometry.dispose(); this.ring.material.dispose();
+      this.column.geometry.dispose(); this.column.material.dispose();
+      this.game.particles.burst(this.pos.clone().add(V3(0, 2, 0)), 0xff5db1, 10, { speed: 16, size: 0.5, life: 0.4 });
+      this.game.audio.tone('sawtooth', 120, 460, 0.22, 0.2);
+      this.onSpawn();
+    }
+  }
+}
+
+/* =====================================================================
+ *  WAVE MANAGER — spawning, wave progression, upgrades.
+ * ===================================================================== */
+class WaveManager {
+  constructor(game) {
+    this.game = game;
+    this.wave = 0;
+    this.queued = 0;
+    this.spawnTimer = 0;
+    this.active = false;
+    this.turretsSpawned = 0;
+
+    const half = CONFIG.world.roomSize / 2 - 18;
+    // Ground spawn points: corners + behind furniture.
+    this.spawnPoints = [
+      V3(-half, 0, -half + 30), V3(half - 10, 0, -half), V3(-half, 0, half - 20), V3(half - 14, 0, half - 30),
+      V3(0, 0, -half), V3(-half + 40, 0, half), V3(half, 0, 0), V3(30, 0, -80),
+    ];
+    // Turret perches: desk top, cardboard box, book platform, floor corner.
+    this.turretSpots = [
+      V3(68, 37, 68), V3(62, 18, -62), V3(-72, 17, 36), V3(-90, 0, 90),
+    ];
+  }
+
+  startWave(n) {
+    this.wave = n;
+    const W = CONFIG.waves;
+    this.queued = W.count(n);
+    this.spawnTimer = 0.5;
+    this.active = true;
+    this.turretsSpawned = 0;
+    this.game.ui.banner(`WAVE ${n}<small>${this.queued} HOSTILES INBOUND</small>`);
+    this.game.audio.waveStart();
+  }
+
+  update(dt) {
+    if (!this.active) return;
+    const g = this.game, W = CONFIG.waves;
+
+    // Spawn queued enemies in bursts from multiple directions
+    // (portals count toward the alive cap).
+    if (this.queued > 0 && g.enemies.length + g.portals.length < CONFIG.enemies.maxAlive) {
+      this.spawnTimer -= dt;
+      if (this.spawnTimer <= 0) {
+        this.spawnTimer = W.spawnGap(this.wave);
+        const room = CONFIG.enemies.maxAlive - g.enemies.length - g.portals.length;
+        const burst = Math.min(W.burst(this.wave), this.queued, room);
+        const points = [...this.spawnPoints].sort(() => Math.random() - 0.5);
+        for (let i = 0; i < burst; i++) {
+          this.queued--;
+          this.spawnOne(points[i % points.length]);
+        }
+      }
+    }
+
+    // Wave cleared? (no queue, no pending portals, no live enemies)
+    if (this.queued === 0 && g.enemies.length === 0 && g.portals.length === 0) {
+      this.active = false;
+      g.score += W.clearBonus(this.wave);
+      if (this.wave >= W.winWave) g.gameOver(true);
+      else g.showUpgradeChoice();
+    }
+  }
+
+  spawnOne(preferredPoint) {
+    const g = this.game, W = CONFIG.waves;
+    const hpMul = W.hpMul(this.wave), dmgMul = W.dmgMul(this.wave);
+    const roll = Math.random();
+
+    // Turret?
+    if (roll < W.turretChance(this.wave) && this.turretsSpawned < W.maxTurrets) {
+      const spot = pick(this.turretSpots);
+      // Avoid double-occupying a spot.
+      const taken = g.enemies.some(e => e instanceof TurretToy && e.position.distanceTo(spot) < 4)
+                 || g.portals.some(po => po.pos.distanceTo(spot) < 4);
+      if (!taken) {
+        this.turretsSpawned++;
+        g.portals.push(new SpawnPortal(g, spot, () => g.enemies.push(new TurretToy(g, spot, hpMul, dmgMul))));
+        return;
+      }
+    }
+
+    // Ground enemy: use the burst's assigned point if it isn't on top of
+    // the player, otherwise pick a far-away one.
+    const playerPos = g.player.position;
+    let spot;
+    if (preferredPoint && preferredPoint.distanceTo(playerPos) > 40) {
+      spot = preferredPoint.clone();
+    } else {
+      const candidates = this.spawnPoints.filter(p => p.distanceTo(playerPos) > 55);
+      spot = pick(candidates.length ? candidates : this.spawnPoints).clone();
+    }
+    spot.x += rand(-5, 5); spot.z += rand(-5, 5);
+
+    if (Math.random() < W.beetleChance(this.wave)) {
+      g.portals.push(new SpawnPortal(g, spot, () => g.enemies.push(new BeetleDrone(g, spot, hpMul, dmgMul))));
+    } else {
+      g.portals.push(new SpawnPortal(g, spot, () => g.enemies.push(new ToyBot(g, spot, hpMul, dmgMul))));
+    }
+  }
+}
+
+/* =====================================================================
+ *  GAME — scene setup, main loop, state machine.
+ * ===================================================================== */
+class Game {
+  constructor() {
+    this.state = 'start';                              // start | playing | upgrading | paused | over
+    this.score = 0;
+    this.shake = 0;
+    this.fovKick = 0;
+    this.pendingWave = 0;
+    this.nextWaveTimer = 0;
+    this.colliders = [];
+    this.enemies = [];
+    this.projectiles = [];
+    this.pickups = [];
+    this.debris = [];
+    this.portals = [];
+
+    this.settings = this.loadSettings();
+
+    this.initRenderer();
+    this.initScene();
+
+    this.audio = new AudioManager();
+    this.ui = new UIManager(this);
+    this.particles = new ParticleSystem(this.scene);
+    this.factory = new ProceduralAssetFactory(this.scene, this.colliders);
+    this.factory.buildRoom();
+    this.player = new Player(this);
+    this.waveManager = new WaveManager(this);
+
+    this.input = { keys: {}, mouseL: false, joyX: 0, joyY: 0 };
+    this.initInput();
+    this.initTouch();
+    this.initSettingsUI();
+    this.applySettings();
+
+    this.clock = new THREE.Clock();
+    this.renderer.setAnimationLoop(() => this.frame());
+  }
+
+  /* ---------------- setup ---------------- */
+  initRenderer() {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(innerWidth, innerHeight);
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    document.body.appendChild(this.renderer.domElement);
+    addEventListener('resize', () => {
+      this.camera.aspect = innerWidth / innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(innerWidth, innerHeight);
+    });
+  }
+
+  initScene() {
+    const W = CONFIG.world;
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(W.fogColor);
+    this.scene.fog = new THREE.Fog(W.fogColor, W.fogNear, W.fogFar);
+
+    this.baseFov = 75;
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, innerWidth / innerHeight, 0.1, 600);
+    this.camera.rotation.order = 'YXZ';
+    this.scene.add(this.camera);                       // so the FP weapon renders
+
+    // Warm sun through the window + soft sky fill.
+    const hemi = new THREE.HemisphereLight(0xbde0fe, 0xa9713f, 0.85);
+    this.scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xfff2d8, 1.6);
+    sun.position.set(-60, 80, -40);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    const half = W.roomSize / 2 + 10;
+    sun.shadow.camera.left = -half; sun.shadow.camera.right = half;
+    sun.shadow.camera.top = half; sun.shadow.camera.bottom = -half;
+    sun.shadow.camera.far = 300;
+    this.scene.add(sun);
+    this.sun = sun;
+  }
+
+  /* ---------------- settings ---------------- */
+  loadSettings() {
+    try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+    catch { return { ...DEFAULT_SETTINGS }; }
+  }
+
+  saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch { /* private mode */ }
+  }
+
+  applySettings() {
+    const s = this.settings;
+    this.baseFov = s.fov;
+    this.audio.setVolume(s.volume);
+    if (this.renderer.shadowMap.enabled !== s.shadows) {
+      this.renderer.shadowMap.enabled = s.shadows;
+      this.sun.castShadow = s.shadows;
+      this.scene.traverse(o => { if (o.isMesh) o.material.needsUpdate = true; });
+    }
+  }
+
+  initSettingsUI() {
+    const s = this.settings;
+    const $ = id => document.getElementById(id);
+    const bindSlider = (id, key, fmt) => {
+      const input = $(id), label = $(id + '-v');
+      input.value = s[key];
+      label.textContent = fmt(s[key]);
+      input.addEventListener('input', () => {
+        s[key] = parseFloat(input.value);
+        label.textContent = fmt(s[key]);
+        this.applySettings();
+        this.saveSettings();
+      });
+    };
+    bindSlider('set-sens', 'sensitivity', v => `${v.toFixed(1)}×`);
+    bindSlider('set-shake', 'shake', v => `${Math.round(v * 100)}%`);
+    bindSlider('set-vol', 'volume', v => `${Math.round(v * 100)}%`);
+    bindSlider('set-fov', 'fov', v => `${Math.round(v)}°`);
+    const bindCheck = (id, key) => {
+      const input = $(id);
+      input.checked = s[key];
+      input.addEventListener('change', () => { s[key] = input.checked; this.applySettings(); this.saveSettings(); });
+    };
+    bindCheck('set-shadows', 'shadows');
+    bindCheck('set-inverty', 'invertY');
+
+    $('btn-settings-start').onclick = () => { this.audio.init(); this.audio.click(); this.openSettings('start-screen'); };
+    $('btn-settings-pause').onclick = () => { this.audio.click(); this.openSettings('pause-screen'); };
+    $('btn-settings-back').onclick = () => {
+      this.audio.click();
+      document.getElementById('settings-screen').classList.add('hidden');
+      document.getElementById(this.settingsReturn).classList.remove('hidden');
+    };
+  }
+
+  openSettings(returnScreenId) {
+    this.settingsReturn = returnScreenId;
+    document.getElementById(returnScreenId).classList.add('hidden');
+    document.getElementById('settings-screen').classList.remove('hidden');
+  }
+
+  initInput() {
+    document.addEventListener('keydown', e => {
+      if (e.code === 'Space') e.preventDefault();
+      this.input.keys[e.code] = true;
+      if (this.state !== 'playing') return;
+      if (e.code === 'KeyR') this.player.weapon.startReload();
+      if (e.code === 'KeyE') this.player.tryPulse();
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.player.tryDash();
+    });
+    document.addEventListener('keyup', e => { this.input.keys[e.code] = false; });
+
+    document.addEventListener('mousedown', e => {
+      if (this.state !== 'playing') return;
+      if (e.button === 0) this.input.mouseL = true;
+      if (e.button === 2) this.player.tryPulse();
+    });
+    document.addEventListener('mouseup', e => { if (e.button === 0) this.input.mouseL = false; });
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    document.addEventListener('mousemove', e => {
+      if (this.state !== 'playing' || document.pointerLockElement !== this.renderer.domElement) return;
+      const p = this.player, s = this.settings;
+      const k = 0.0022 * s.sensitivity;
+      p.yaw -= e.movementX * k;
+      p.pitch = clamp(p.pitch - e.movementY * k * (s.invertY ? -1 : 1), -1.5, 1.5);
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      if (!IS_TOUCH && document.pointerLockElement !== this.renderer.domElement && this.state === 'playing') {
+        this.pauseGame();
+      }
+    });
+
+    // Overlay buttons.
+    document.getElementById('btn-start').onclick = () => {
+      this.audio.init();
+      this.audio.click();
+      this.ui.el.startScreen.classList.add('hidden');
+      this.startRun();
+    };
+    document.getElementById('btn-resume').onclick = () => {
+      this.audio.click();
+      this.ui.el.pauseScreen.classList.add('hidden');
+      this.resumePlay();
+    };
+    document.getElementById('btn-restart').onclick = () => location.reload();
+    document.getElementById('btn-menu').onclick = () => location.reload();   // menu = fresh start screen
+  }
+
+  /* ---------------- touch controls (virtual joystick + buttons) ---------------- */
+  initTouch() {
+    if (!IS_TOUCH) return;
+    document.body.classList.add('touch');
+    document.getElementById('touch-ui').classList.remove('hidden');
+    document.getElementById('controls-desktop').classList.add('hidden');
+    document.getElementById('controls-touch').classList.remove('hidden');
+
+    const $ = id => document.getElementById(id);
+    const input = this.input;
+    const JOY_R = 55;                                  // joystick throw radius (px)
+    const joyBase = $('joy-base'), joyThumb = $('joy-thumb');
+    let joyId = null, joyOrigin = null;
+    let lookId = null, lastLook = null;
+
+    // --- Left zone: floating joystick appears where the thumb lands.
+    const joyZone = $('joy-zone');
+    joyZone.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (joyId !== null) return;
+      const t = e.changedTouches[0];
+      joyId = t.identifier;
+      joyOrigin = { x: t.clientX, y: t.clientY };
+      joyBase.style.display = 'block';
+      joyBase.style.left = `${t.clientX}px`;
+      joyBase.style.top = `${t.clientY}px`;
+      joyThumb.style.transform = 'translate(-50%, -50%)';
+    }, { passive: false });
+    joyZone.addEventListener('touchmove', e => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        if (t.identifier !== joyId) continue;
+        let dx = t.clientX - joyOrigin.x, dy = t.clientY - joyOrigin.y;
+        const len = Math.hypot(dx, dy);
+        if (len > JOY_R) { dx *= JOY_R / len; dy *= JOY_R / len; }
+        input.joyX = dx / JOY_R;
+        input.joyY = dy / JOY_R;
+        joyThumb.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      }
+    }, { passive: false });
+    const joyEnd = e => {
+      for (const t of e.changedTouches) {
+        if (t.identifier !== joyId) continue;
+        joyId = null;
+        input.joyX = input.joyY = 0;
+        joyBase.style.display = 'none';
+      }
+    };
+    joyZone.addEventListener('touchend', joyEnd);
+    joyZone.addEventListener('touchcancel', joyEnd);
+
+    // --- Right zone: drag to aim.
+    const lookZone = $('look-zone');
+    lookZone.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (lookId !== null) return;
+      const t = e.changedTouches[0];
+      lookId = t.identifier;
+      lastLook = { x: t.clientX, y: t.clientY };
+    }, { passive: false });
+    lookZone.addEventListener('touchmove', e => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        if (t.identifier !== lookId) continue;
+        const dx = t.clientX - lastLook.x, dy = t.clientY - lastLook.y;
+        lastLook = { x: t.clientX, y: t.clientY };
+        if (this.state !== 'playing') continue;
+        const s = this.settings, p = this.player;
+        const k = 0.005 * s.sensitivity;
+        p.yaw -= dx * k;
+        p.pitch = clamp(p.pitch - dy * k * (s.invertY ? -1 : 1), -1.5, 1.5);
+      }
+    }, { passive: false });
+    const lookEnd = e => {
+      for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null;
+    };
+    lookZone.addEventListener('touchend', lookEnd);
+    lookZone.addEventListener('touchcancel', lookEnd);
+
+    // --- Action buttons.
+    const bindBtn = (id, down, up) => {
+      const el = $(id);
+      el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); down(); }, { passive: false });
+      const end = e => { e.preventDefault(); e.stopPropagation(); if (up) up(); };
+      el.addEventListener('touchend', end, { passive: false });
+      el.addEventListener('touchcancel', end, { passive: false });
+    };
+    bindBtn('tb-fire', () => { input.mouseL = true; }, () => { input.mouseL = false; });
+    bindBtn('tb-jump', () => { input.keys['Space'] = true; }, () => { input.keys['Space'] = false; });
+    bindBtn('tb-dash', () => { if (this.state === 'playing') this.player.tryDash(); });
+    bindBtn('tb-pulse', () => { if (this.state === 'playing') this.player.tryPulse(); });
+    bindBtn('tb-reload', () => { if (this.state === 'playing') this.player.weapon.startReload(); });
+    bindBtn('btn-pause', () => { if (this.state === 'playing') this.pauseGame(); });
+  }
+
+  pauseGame() {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    this.input.mouseL = false;
+    this.ui.el.pauseScreen.classList.remove('hidden');
+  }
+
+  /* ---------------- state flow ---------------- */
+  startRun() {
+    this.state = 'playing';
+    if (!IS_TOUCH) {
+      this.renderer.domElement.requestPointerLock();
+    } else {
+      // Best-effort fullscreen + landscape lock (needs the user gesture we
+      // just got from the DEPLOY tap; not all mobile browsers allow both).
+      const fs = document.documentElement.requestFullscreen?.() ?? Promise.reject();
+      fs.then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+    }
+    this.waveManager.startWave(1);
+  }
+
+  resumePlay() {
+    this.state = 'playing';
+    if (!IS_TOUCH) this.renderer.domElement.requestPointerLock();
+  }
+
+  showUpgradeChoice() {
+    this.state = 'upgrading';
+    this.input.mouseL = false;
+    document.exitPointerLock();
+    // Pick 3 distinct upgrades.
+    const pool = [...UPGRADES];
+    const options = [];
+    while (options.length < 3 && pool.length) options.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    this.ui.showUpgrades(options, up => {
+      this.audio.click();
+      up.apply(this);
+      this.ui.hideUpgrades();
+      this.resumePlay();
+      this.ui.banner(`WAVE ${this.waveManager.wave + 1} INCOMING`, 1.2);
+      // Short breather before the next wave (ticked in frame(), pause-safe).
+      this.pendingWave = this.waveManager.wave + 1;
+      this.nextWaveTimer = 1.2;
+    });
+  }
+
+  gameOver(won) {
+    if (this.state === 'over') return;
+    this.state = 'over';
+    this.input.mouseL = false;
+    document.exitPointerLock();
+    won ? this.audio.win() : this.audio.lose();
+    this.ui.showEnd(won, this.score, this.waveManager.wave);
+  }
+
+  onEnemyKilled(enemy) {
+    this.score += enemy.stats.score;
+    // Occasional pickup drop.
+    if (Math.random() < CONFIG.pickups.dropChance) {
+      const w = CONFIG.pickups.weights, r = Math.random();
+      const type = r < w.health ? 'health' : r < w.health + w.ammo ? 'ammo' : 'speed';
+      this.pickups.push(new Pickup(this, enemy.position, type));
+    }
+  }
+
+  addShake(amount) { this.shake = Math.min(1.2, this.shake + amount * this.settings.shake); }
+
+  // Voxel death: clone the enemy's meshes as physics debris that pops apart.
+  spawnDebris(group) {
+    group.updateMatrixWorld(true);
+    const center = new THREE.Box3().setFromObject(group).getCenter(V3());
+    group.traverse(o => {
+      if (!o.isMesh) return;
+      const piece = new THREE.Mesh(o.geometry, o.material.clone());
+      o.getWorldPosition(piece.position);
+      o.getWorldQuaternion(piece.quaternion);
+      piece.scale.copy(o.getWorldScale(V3()));
+      piece.castShadow = true;
+      piece.material.transparent = true;
+      this.scene.add(piece);
+      const outward = piece.position.clone().sub(center).normalize();
+      this.debris.push({
+        mesh: piece, life: 0, maxLife: rand(0.6, 1.0),
+        vel: outward.multiplyScalar(rand(16, 32)).add(V3(0, rand(14, 30), 0)),
+        spin: V3(rand(-14, 14), rand(-14, 14), rand(-14, 14)),
+      });
+    });
+  }
+
+  updateDebris(dt) {
+    for (let i = this.debris.length - 1; i >= 0; i--) {
+      const d = this.debris[i];
+      d.life += dt;
+      if (d.life > d.maxLife) {
+        this.scene.remove(d.mesh);
+        d.mesh.material.dispose();
+        this.debris.splice(i, 1);
+        continue;
+      }
+      d.vel.y -= CONFIG.world.gravity * 0.6 * dt;
+      d.mesh.position.addScaledVector(d.vel, dt);
+      if (d.mesh.position.y < 0.4) { d.mesh.position.y = 0.4; d.vel.y *= -0.4; d.vel.x *= 0.8; d.vel.z *= 0.8; }
+      d.mesh.rotation.x += d.spin.x * dt;
+      d.mesh.rotation.y += d.spin.y * dt;
+      d.mesh.material.opacity = 1 - (d.life / d.maxLife) ** 2;
+    }
+  }
+
+  /* ---------------- camera ---------------- */
+  updateCamera(dt) {
+    const p = this.player;
+    // Base transform.
+    const eye = p.eyePos();
+    // Walk bob.
+    const bobY = Math.abs(Math.sin(p.bobT)) * 0.28 * p.bobAmount;
+    const bobX = Math.sin(p.bobT) * 0.14 * p.bobAmount;
+    // Screen shake.
+    this.shake = Math.max(0, this.shake - dt * CONFIG.feel.shakeDecay);
+    const s = this.shake * this.shake;
+    this.camera.position.set(
+      eye.x + bobX + rand(-s, s) * 0.5,
+      eye.y + bobY + rand(-s, s) * 0.5,
+      eye.z + rand(-s, s) * 0.5
+    );
+    this.camera.rotation.set(
+      p.pitch + rand(-s, s) * 0.02 + p.weapon.recoil * CONFIG.feel.camRecoilPitch,
+      p.yaw + rand(-s, s) * 0.02,
+      rand(-s, s) * 0.02
+    );
+    // Dash FOV kick.
+    this.fovKick = Math.max(0, this.fovKick - dt * 3.5);
+    const fov = this.baseFov + this.fovKick * 14;
+    if (Math.abs(this.camera.fov - fov) > 0.05) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  /* ---------------- main loop ---------------- */
+  frame() {
+    const dt = Math.min(this.clock.getDelta(), 0.05);
+
+    if (this.state === 'playing') {
+      // Delayed wave start (after an upgrade was chosen).
+      if (this.pendingWave) {
+        this.nextWaveTimer -= dt;
+        if (this.nextWaveTimer <= 0) {
+          this.waveManager.startWave(this.pendingWave);
+          this.pendingWave = 0;
+        }
+      }
+
+      this.player.update(dt);
+      this.waveManager.update(dt);
+
+      for (const po of this.portals) po.update(dt);
+      this.portals = this.portals.filter(po => !po.done);
+
+      for (const e of this.enemies) e.update(dt);
+      this.enemies = this.enemies.filter(e => e.alive);
+
+      for (const pr of this.projectiles) pr.update(dt);
+      this.projectiles = this.projectiles.filter(pr => !pr.dead);
+
+      for (const pk of this.pickups) pk.update(dt);
+      this.pickups = this.pickups.filter(pk => !pk.dead);
+
+      this.updateCamera(dt);
+    }
+
+    // Effects keep animating even while paused-for-upgrades looks nicer frozen;
+    // only advance them during play or game-over (death fireworks).
+    if (this.state === 'playing' || this.state === 'over') {
+      this.particles.update(dt);
+      this.updateDebris(dt);
+      this.player.pulse.update(dt);
+    }
+
+    this.ui.update(dt);
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+
+/* =====================================================================
+ *  PWA — register the service worker (needs http(s); skipped on file://).
+ * ===================================================================== */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW registration failed:', err));
+  });
+}
+
+/* ===================================================================== */
+new Game();
+</script>
+</body>
+</html>

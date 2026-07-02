@@ -148,6 +148,27 @@
   .menu-foot { margin-top: 18px; font-size: 10px; letter-spacing: 2px; color: #4f7691; }
   .hidden { display: none !important; }
 
+  /* Top-left back button, shared by all sub-screens. The arrow is drawn
+   * with borders (a text "←" glyph never centers optically). */
+  .back-btn {
+    position: absolute;
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    left: calc(14px + env(safe-area-inset-left, 0px));
+    width: 48px; height: 48px; padding: 0; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(56, 230, 255, 0.08); border: 1px solid rgba(110, 210, 255, 0.45);
+    color: #aef7ff; font-size: 0; cursor: pointer;
+    z-index: 2; transition: background 0.15s, transform 0.08s;
+  }
+  .back-btn::before {
+    content: ""; width: 13px; height: 13px; transform: translateX(3px) rotate(45deg);
+    border-left: 3px solid currentColor; border-bottom: 3px solid currentColor;
+    border-radius: 1px;
+  }
+  .back-btn:hover { background: rgba(56, 230, 255, 0.2); }
+  .back-btn:active { transform: scale(0.9); }
+  .back-btn:focus-visible { outline: 2px solid #ffe066; outline-offset: 2px; }
+
   /* Stats row (pause screen) */
   .stat-row { display: flex; justify-content: center; gap: 30px; margin: 6px 0 24px; }
   .stat { display: flex; flex-direction: column; gap: 3px; }
@@ -605,6 +626,7 @@
 
 <!-- ============================== HOW TO PLAY SCREEN ============================== -->
 <div id="howto-screen" class="overlay hidden">
+  <button class="back-btn" id="btn-howto-back" aria-label="Back">←</button>
   <div class="menu-card">
     <div class="eyebrow">FIELD MANUAL</div>
     <h1 class="small">HOW TO PLAY</h1>
@@ -638,12 +660,12 @@
         <li>Clear all 10 waves to win — pick upgrades to match your style.</li>
       </ul>
     </div>
-    <button class="btn btn-ghost" id="btn-howto-back">BACK</button>
   </div>
 </div>
 
 <!-- ============================== PAUSE SCREEN ============================== -->
 <div id="pause-screen" class="overlay hidden">
+  <button class="back-btn" id="btn-pause-back" aria-label="Resume">←</button>
   <div class="menu-card">
     <div class="eyebrow">SYSTEMS HOLD</div>
     <h1 class="small">PAUSED</h1>
@@ -663,6 +685,7 @@
 
 <!-- ============================== SETTINGS SCREEN ============================== -->
 <div id="settings-screen" class="overlay hidden">
+  <button class="back-btn" id="btn-settings-back" aria-label="Back">←</button>
   <div class="menu-card">
     <div class="eyebrow">CALIBRATION</div>
     <h1 class="small">SETTINGS</h1>
@@ -677,7 +700,6 @@
       <div class="set-group">AUDIO</div>
       <div class="set-row"><label for="set-vol">MASTER VOLUME</label><span id="set-vol-v"></span><input type="range" id="set-vol" min="0" max="1" step="0.05"></div>
     </div>
-    <button class="btn btn-primary" id="btn-settings-back">DONE</button>
   </div>
 </div>
 
@@ -704,6 +726,7 @@
 
 <!-- ============================== END SCREEN ============================== -->
 <div id="end-screen" class="overlay hidden">
+  <button class="back-btn" id="btn-end-back" aria-label="Back to menu">←</button>
   <div class="menu-card">
     <div class="eyebrow">MISSION REPORT</div>
     <h1 id="end-title" class="small">MECH DESTROYED</h1>
@@ -3292,11 +3315,14 @@ class Game {
       this.ui.el.startScreen.classList.add('hidden');
       this.startRun();
     };
-    document.getElementById('btn-resume').onclick = () => {
+    const resume = () => {
       this.audio.click();
       this.ui.el.pauseScreen.classList.add('hidden');
       this.resumePlay();
     };
+    document.getElementById('btn-resume').onclick = resume;
+    document.getElementById('btn-pause-back').onclick = resume;
+    document.getElementById('btn-end-back').onclick = () => location.reload();
     document.getElementById('btn-restart').onclick = () => location.reload();
     document.getElementById('btn-menu').onclick = () => location.reload();   // menu = fresh start screen
 
